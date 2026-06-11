@@ -26,7 +26,7 @@ bash setup.sh
 # Health check
 curl http://<VPS_IP>:3001/health
 
-# Criar conta (substituir email e senha)
+# Criar conta
 curl -X POST http://<VPS_IP>:3001/create-account \
   -H "x-bot-secret: <BOT_SECRET>" \
   -H "Content-Type: application/json" \

@@ -2,18 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 
-const PRESET_EMAILS = [
-  { email: 'GoldieLangenfeld490@hotmail.com', password: 'kteBlMD4d7VN' },
-  { email: 'FaulkenberryAlma6379@hotmail.com', password: '2H9AfJbgS' },
-  { email: 'RuvalcavaGoettsche028@hotmail.com', password: 'p5aHFZal' },
-  { email: 'KerschLetang55@hotmail.com', password: 'NMdSNI8E9L' },
-  { email: 'WaligoraRadona77@hotmail.com', password: 'jx23hjM8IHa' },
-  { email: 'GoffinetPapanikolas6324@hotmail.com', password: 'jgcL0Uh8FY' },
-  { email: 'KendallKrewson458@hotmail.com', password: '9yMkI2R2vg7' },
-  { email: 'AllorFriddell7728@hotmail.com', password: 'gsNaE33695' },
-  { email: 'CarmickelOlenius9937@hotmail.com', password: 'b5Mg6UEtMQ' },
-  { email: 'EvelynRegehr238@hotmail.com', password: 'PLO7Mj3f4' },
-];
+const PRESET_EMAILS: { email: string; password: string }[] = [];
 
 type Job = {
   id: string;
