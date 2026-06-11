@@ -23,14 +23,10 @@ cp index.js package.json /root/instagram-bot/
 cd /root/instagram-bot
 
 if [ ! -f .env ]; then
-  cat > .env << 'EOF'
-BOT_SECRET=6cd233b9cf07f198ed526d86e9fa1b5f317c69ab530069fc
-PROXY_USER=12a9e3073948b23797f4
-PROXY_PASS=e6d27cc95521bf9a
-PORT=3001
-PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
-EOF
-  echo "==> Created .env"
+  echo "==> .env not found. Copy .env.example to .env and fill in your values:"
+  echo "    cp /root/testeeee/bot/.env.example /root/instagram-bot/.env"
+  echo "    nano /root/instagram-bot/.env"
+  exit 1
 fi
 
 export PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true

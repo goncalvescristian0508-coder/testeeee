@@ -10,9 +10,10 @@ puppeteerExtra.use(StealthPlugin());
 const app = express();
 app.use(express.json());
 
-const BOT_SECRET = process.env.BOT_SECRET || '6cd233b9cf07f198ed526d86e9fa1b5f317c69ab530069fc';
-const DEFAULT_PROXY_USER = process.env.PROXY_USER || '12a9e3073948b23797f4';
-const DEFAULT_PROXY_PASS = process.env.PROXY_PASS || 'e6d27cc95521bf9a';
+const BOT_SECRET = process.env.BOT_SECRET;
+if (!BOT_SECRET) throw new Error('BOT_SECRET env var is required');
+const DEFAULT_PROXY_USER = process.env.PROXY_USER || '';
+const DEFAULT_PROXY_PASS = process.env.PROXY_PASS || '';
 
 /** @type {Record<string, object>} */
 const jobs = {};
