@@ -37,30 +37,30 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function loginOutlook(page, email, password) {
   log('outlook', `Logging in as ${email}...`);
-  await page.goto('https://outlook.live.com/mail/0/', {
-    waitUntil: 'networkidle2',
-    timeout: 60000,
-  });
-  await sleep(1500);
 
-  // Already logged in
-  if (page.url().includes('/mail/0/')) {
-    const body = await page.content();
-    if (!body.includes('Sign in') && !body.includes('Entrar')) return;
-  }
-
-  // Click sign in if on landing page
-  try {
-    const signIn = await page.$('a[data-task="signin"], [aria-label="Sign in"], a[href*="login.live.com"]');
-    if (signIn) { await signIn.click(); await sleep(2500); }
-  } catch {}
-
-  const emailInput = await page.waitForSelector('input[type="email"]', { timeout: 20000 });
-  await emailInput.type(email, { delay: 70 });
-  await page.keyboard.press('Enter');
+  // Go directly to Microsoft login
+  await page.goto(
+    `https://login.live.com/login.srf?wa=wsignin1.0&rpsnv=13&ct=1&rver=7.0.6737.0&wp=MBI_SSL&wreply=https%3A%2F%2Foutlook.live.com%2Fowa%2F&id=292841`,
+    { waitUntil: 'networkidle2', timeout: 60000 }
+  );
   await sleep(2000);
 
-  const passInput = await page.waitForSelector('input[type="password"]', { timeout: 15000 });
+  // If already at inbox, we're done
+  if (page.url().includes('outlook.live.com/mail') || page.url().includes('outlook.live.com/owa')) {
+    log('outlook', 'Already logged in.');
+    return;
+  }
+
+  // Fill email
+  const emailInput = await page.waitForSelector('input[type="email"], input[name="loginfmt"]', { timeout: 20000 });
+  await emailInput.click({ clickCount: 3 });
+  await emailInput.type(email, { delay: 70 });
+  await page.keyboard.press('Enter');
+  await sleep(2500);
+
+  // Fill password
+  const passInput = await page.waitForSelector('input[type="password"], input[name="passwd"]', { timeout: 15000 });
+  await passInput.click({ clickCount: 3 });
   await passInput.type(password, { delay: 70 });
   await page.keyboard.press('Enter');
   await sleep(4000);
@@ -70,6 +70,14 @@ async function loginOutlook(page, email, password) {
     const noBtn = await page.$('#idBtn_Back');
     if (noBtn) { await noBtn.click(); await sleep(2000); }
   } catch {}
+
+  // Wait for inbox to load
+  await page.waitForFunction(
+    () => window.location.href.includes('outlook.live.com'),
+    { timeout: 20000 }
+  ).catch(() => {});
+
+  log('outlook', `Outlook ready. URL: ${page.url()}`);
 }
 
 async function scanOutlookForCode(page) {
