@@ -216,28 +216,68 @@ async function runJob(job) {
       waitUntil: 'networkidle2',
       timeout: 60000,
     });
-    await sleep(2500);
+    await sleep(3000);
+
+    const pageTitle = await page.title();
+    const pageUrl = page.url();
+    log(id, `Page loaded: "${pageTitle}" | URL: ${pageUrl}`);
 
     // Accept cookies if shown
     try {
       const btns = await page.$$('button');
       for (const btn of btns) {
         const t = await btn.evaluate((el) => el.textContent);
-        if (/allow|accept|aceitar/i.test(t)) { await btn.click(); await sleep(1000); break; }
+        if (/allow|accept|aceitar/i.test(t)) { await btn.click(); await sleep(1500); break; }
       }
     } catch {}
 
-    // ── Step 1: Fill signup form ──
-    log(id, 'Filling signup form...');
-    await page.waitForSelector('input[name="emailOrPhone"]', { timeout: 20000 });
+    // ── Step 1: Find email input with multiple possible selectors ──
+    log(id, 'Looking for signup form...');
 
-    await typeInto(page, 'input[name="emailOrPhone"]', email);
+    // Try to find any text/email input on the page
+    const emailFieldSelector = await page.evaluate(() => {
+      const candidates = [
+        'input[name="emailOrPhone"]',
+        'input[type="email"]',
+        'input[name="email"]',
+        'input[aria-label*="email" i]',
+        'input[aria-label*="Email" i]',
+        'input[placeholder*="email" i]',
+        'input[placeholder*="Email" i]',
+        'input[placeholder*="Phone" i]',
+        'input[placeholder*="celular" i]',
+        'input[placeholder*="e-mail" i]',
+      ];
+      for (const sel of candidates) {
+        if (document.querySelector(sel)) return sel;
+      }
+      // Fallback: first visible input
+      const inputs = Array.from(document.querySelectorAll('input:not([type="hidden"])'));
+      return inputs.length ? null : null;
+    });
+
+    log(id, `Email field selector found: ${emailFieldSelector}`);
+
+    if (emailFieldSelector) {
+      await typeInto(page, emailFieldSelector, email);
+    } else {
+      // Try waiting a bit more and use first input
+      await sleep(3000);
+      const firstInput = await page.$('input:not([type="hidden"])');
+      if (firstInput) {
+        await firstInput.click({ clickCount: 3 });
+        await firstInput.type(email, { delay: 70 });
+      } else {
+        throw new Error('Could not find email input on Instagram signup page');
+      }
+    }
+
     await sleep(500);
-    await typeInto(page, 'input[name="fullName"]', deriveName(email));
+    await typeInto(page, 'input[name="fullName"], input[aria-label*="name" i], input[placeholder*="name" i]', deriveName(email));
     await sleep(400);
-    await typeInto(page, 'input[name="username"]', deriveUsername(email));
+    await typeInto(page, 'input[name="username"], input[aria-label*="username" i], input[placeholder*="username" i]', deriveUsername(email));
     await sleep(400);
-    await typeInto(page, 'input[name="password"]', emailPassword);
+    await typeInto(page, 'input[name="password"], input[type="password"]', emailPassword);
     await sleep(600);
 
     log(id, 'Submitting form...');
