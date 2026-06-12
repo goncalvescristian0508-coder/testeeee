@@ -442,36 +442,104 @@ async function runJob(job) {
     log(id, 'Digitando email...');
     await emailEl.click({ clickCount: 3 });
     await emailEl.type(email, { delay: 70 });
-    await sleep(500);
+    await sleep(800);
+    await page.keyboard.press('Tab'); // blur para disparar validação do campo
+    await sleep(1000);
 
-    // Preencher campos visíveis (formulário all-in-one)
-    await typeInto(page, 'input[name="fullName"], input[placeholder*="Full name" i], input[aria-label*="Full name" i]', deriveName(email));
-    await sleep(400);
-    await typeInto(page, 'input[name="username"], input[placeholder*="username" i], input[aria-label*="username" i]', deriveUsername(email));
-    await sleep(400);
-    await typeInto(page, 'input[name="password"], input[type="password"]', emailPassword);
-    await sleep(600);
+    log(id, 'Avançando do passo 1 (email)...');
+    await clickButton(page, ['button[type="submit"]', 'button']);
+    await sleep(5000);
 
-    log(id, 'Submetendo formulário...');
-    await clickButton(page, 'button[type="submit"]');
-    await sleep(4000);
+    // ── Wizard multi-passo do Instagram ──────────────────────────────────────────
+    // O Instagram mobile mostra os campos passo-a-passo no mesmo URL.
+    // Percorremos os passos: nome/senha → aniversário → username → OTP
+    let otpDetected = false;
 
-    await handleBirthday(id, page);
+    const getVisibleInputs = () => page.evaluate(() =>
+      Array.from(document.querySelectorAll('input:not([type="hidden"])'))
+        .filter(i => i.offsetParent !== null)
+        .map(i => ({ type: i.type, name: i.name, id: i.id, maxLen: i.maxLength, ph: i.placeholder, ac: i.autocomplete }))
+    ).catch(() => []);
 
-    // ── OTP ──
-    const content = await page.content();
-    const needsOtp = /confirmationCode|verificationCode|enter.*code|c[oó]digo|verification code/i.test(content);
+    for (let wizStep = 0; wizStep < 15; wizStep++) {
+      await sleep(500);
+      const visInputs = await getVisibleInputs();
+      const url = page.url();
+      log(id, `[wizard] step=${wizStep} url=${url.split('/').pop()} inputs(${visInputs.length}): ${visInputs.map(i => `${i.type}[${i.name || i.id || i.ac || i.ph || '?'}|ml:${i.maxLen}]`).join(' ')}`);
 
-    if (needsOtp) {
+      // ── Saiu das páginas de signup → sucesso ──
+      if (!/accounts\/signup|accounts\/emailsignup/i.test(url)) {
+        log(id, '[wizard] Saiu do signup — conta criada!');
+        break;
+      }
+
+      // ── Página OTP: input real (não falso positivo do bundle JS) ──
+      const isRealOtpInput = visInputs.some(i =>
+        i.ac === 'one-time-code' ||
+        /confirmationCode|verificationCode|security_code/i.test(i.name + i.id) ||
+        (i.maxLen === 6 && i.type !== 'hidden') ||
+        visInputs.filter(x => x.maxLen === 1).length >= 6
+      );
+      if (isRealOtpInput) {
+        log(id, '[wizard] Página de OTP detectada (input real)');
+        otpDetected = true;
+        break;
+      }
+
+      // ── Aniversário ──
+      const hasBirthdaySelect = await page.$('select[title="Month:"], select[aria-label*="Month" i], select[aria-label*="Mês" i]').catch(() => null);
+      if (hasBirthdaySelect) {
+        log(id, '[wizard] Passo birthday');
+        await handleBirthday(id, page);
+        await sleep(2000);
+        continue;
+      }
+
+      // ── Nome completo ──
+      const nameFilled = await typeInto(page, 'input[name="fullName"], input[aria-label*="Full name" i], input[placeholder*="Full name" i], input[placeholder*="nome" i]', deriveName(email));
+      if (nameFilled) log(id, '[wizard] nome preenchido');
+      await sleep(300);
+
+      // ── Senha ──
+      const passFilled = await typeInto(page, 'input[name="password"], input[type="password"]', emailPassword);
+      if (passFilled) log(id, '[wizard] senha preenchida');
+      await sleep(300);
+
+      // ── Username ──
+      const userFilled = await typeInto(page, 'input[name="username"], input[aria-label*="username" i], input[placeholder*="username" i], input[placeholder*="usuário" i]', deriveUsername(email));
+      if (userFilled) log(id, '[wizard] username preenchido');
+      await sleep(300);
+
+      if (nameFilled || passFilled || userFilled) {
+        log(id, '[wizard] Submetendo passo...');
+        await clickButton(page, ['button[type="submit"]', 'button']);
+        await sleep(4000);
+        continue;
+      }
+
+      // Nenhum campo reconhecido — tentar clicar em qualquer botão "Next"
+      const nextClicked = await page.evaluate(() => {
+        const btns = Array.from(document.querySelectorAll('button'));
+        const b = btns.find(b => /next|avançar|continue|próximo|seguinte|submit|ok/i.test(b.textContent || ''));
+        if (b) { b.click(); return b.textContent.trim().slice(0, 20); }
+        return null;
+      });
+      if (nextClicked) {
+        log(id, `[wizard] Clicou botão "${nextClicked}"`);
+        await sleep(3500);
+        continue;
+      }
+
+      log(id, '[wizard] Sem campos nem botões reconhecidos — a parar wizard');
+      break;
+    }
+
+    // ── OTP ────────────────────────────────────────────────────────────────────
+    if (otpDetected) {
       log(id, 'Instagram pede verificação por email...');
 
-      // Diagnóstico: quais inputs estão na página OTP
-      const otpPageInputs = await page.evaluate(() =>
-        Array.from(document.querySelectorAll('input')).map(i =>
-          `type=${i.type}|name=${i.name}|id=${i.id}|maxLen=${i.maxLength}|ph=${i.placeholder}|autocomplete=${i.autocomplete}`
-        )
-      ).catch(() => []);
-      log(id, `Inputs na página OTP: ${otpPageInputs.join(' :: ')}`);
+      const visInputsOtp = await getVisibleInputs();
+      log(id, `Inputs na página OTP: ${JSON.stringify(visInputsOtp)}`);
 
       const otpSel = [
         'input[name="confirmationCode"]',
@@ -495,9 +563,7 @@ async function runJob(job) {
 
         log(id, `Inserindo OTP (tentativa ${attempt + 1}): ${otp}`);
 
-        // Tentar campo principal
         let typed = await typeInto(page, otpSel, otp);
-        log(id, `typeInto resultado: ${typed}`);
 
         if (!typed) {
           // Fallback 1: 6 inputs individuais (um por dígito)
@@ -513,7 +579,7 @@ async function runJob(job) {
         }
 
         if (!typed) {
-          // Fallback 2: qualquer input com name/id relacionado com código
+          // Fallback 2: qualquer input com name/id ou maxLen=6
           for (const inp of await page.$$('input[type="text"], input[type="tel"], input[type="number"], input:not([type="hidden"])')) {
             const info = await inp.evaluate(el => ({ maxLen: el.maxLength, name: el.name, id: el.id }));
             if (info.maxLen === 6 || /code|verification|confirm/i.test(info.name + info.id)) {
@@ -527,7 +593,6 @@ async function runJob(job) {
         }
 
         if (!typed) {
-          // Fallback 3: focus no primeiro input visível e keyboard.type
           log(id, 'OTP via keyboard.type (fallback3)');
           await page.evaluate(() => {
             const inp = document.querySelector('input:not([type="hidden"]):not([type="submit"])');
@@ -537,7 +602,6 @@ async function runJob(job) {
         }
 
         await sleep(500);
-        // Tentar tanto submit button como Enter
         const submitted = await clickButton(page, ['button[type="submit"]', 'button']);
         if (!submitted) await page.keyboard.press('Enter');
         await sleep(7000);
@@ -546,12 +610,8 @@ async function runJob(job) {
         const postContent = await page.content();
         log(id, `URL após OTP tentativa ${attempt + 1}: ${postOtpUrl}`);
 
-        // Log parcial do conteúdo para diagnóstico
-        const snippet = postContent.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').slice(0, 300);
-        log(id, `Conteúdo pós-OTP (snippet): ${snippet}`);
-
         if (!/accounts\/signup|accounts\/emailsignup/i.test(postOtpUrl)) {
-          break; // OTP aceite — avançar
+          break;
         }
 
         const rejected = /invalid|expired|incorrect|inv[aá]lid|expirou|expirad|incorreto/i.test(postContent);
@@ -561,30 +621,28 @@ async function runJob(job) {
       log(id, `URL final pós-OTP: ${page.url()}`);
       await outlookCtx.close().catch(() => {});
     } else {
-      // OTP não necessário — fechar Outlook iniciado em paralelo
       outlookInitPromise.then(({ ctx }) => ctx && ctx.close().catch(() => {})).catch(() => {});
     }
 
-    // ── Campos de perfil pós-OTP ──
-    for (let i = 0; i < 3; i++) {
-      const filled = await fillProfileFields(id, page, email, emailPassword);
-      if (!filled) break;
-      log(id, `Preenchimento de perfil ${i + 1}. URL: ${page.url()}`);
-      await handleBirthday(id, page);
-    }
-
-    // ── Ecrãs extra (termos, etc.) ──
-    for (let i = 0; i < 5; i++) {
+    // ── Passos pós-OTP (username, termos, etc.) ──────────────────────────────
+    for (let i = 0; i < 8; i++) {
       const stepUrl = page.url();
+      if (!/accounts\/signup|accounts\/emailsignup/i.test(stepUrl)) break;
+      const visInputs = await getVisibleInputs();
+      log(id, `Pós-OTP step ${i + 1}: ${stepUrl.split('/').pop()} | inputs: ${visInputs.map(i => `${i.type}[${i.name || i.ph}]`).join(', ')}`);
+
+      const userFilled = await typeInto(page, 'input[name="username"], input[aria-label*="username" i], input[placeholder*="username" i]', deriveUsername(email));
+      if (userFilled) { log(id, 'Pós-OTP: username preenchido'); await clickButton(page, ['button[type="submit"]', 'button']); await sleep(3500); continue; }
+
+      const hasBirthday = await handleBirthday(id, page);
+      if (hasBirthday) { await sleep(2000); continue; }
+
       const stepContent = await page.content();
-      log(id, `Ecrã extra ${i + 1}: ${stepUrl}`);
-      if (/accounts\/signup|accounts\/emailsignup/i.test(stepUrl)) break;
       if (/\bterms\b|\btermos\b|\bagree\b|\bconcordo\b/i.test(stepContent)) {
-        await clickButton(page, ['button[type="submit"]', 'button[type="button"]']);
-        await sleep(2500);
-      } else if (/birthday|aniversário|birth date/i.test(stepContent)) {
-        await handleBirthday(id, page);
-      } else { break; }
+        await clickButton(page, ['button[type="submit"]', 'button[type="button"]']); await sleep(2500); continue;
+      }
+
+      break;
     }
 
     // ── Resultado ──
