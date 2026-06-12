@@ -154,13 +154,17 @@ async function loginOutlook(jobId, page, email, password, proxyUser, proxyPass) 
 async function scanFolder(jobId, page, email, folderUrl, triedCodes = new Set()) {
   const folder = folderUrl.split('/').pop();
   try {
-    await page.goto(folderUrl, { waitUntil: 'domcontentloaded', timeout: 25000 });
-    // Aguardar SPA renderizar (Outlook é React — body fica vazio até JS executar)
-    await page.waitForFunction(
-      () => (document.body.innerText || '').length > 200,
-      { timeout: 20000, polling: 1000 }
-    ).catch(() => {});
-    await sleep(2000);
+    await page.goto(folderUrl, { waitUntil: 'domcontentloaded', timeout: 40000 });
+    // Aguardar LISTA de emails renderizar (nav carrega em <1s mas lista demora mais)
+    // body.innerText > 200 passa cedo demais (só o cabeçalho do Outlook já tem ~300 chars)
+    await page.waitForFunction(() => {
+      const items = [...document.querySelectorAll('[role="option"],[role="listitem"],[data-convid]')];
+      // Pelo menos 1 item com texto real (assunto/remetente visíveis)
+      if (items.length > 0 && items.some(el => (el.innerText || '').trim().length > 20)) return true;
+      // Fallback: body muito longo significa que algum conteúdo de email renderizou
+      return (document.body.innerText || '').length > 1200;
+    }, { timeout: 28000, polling: 700 }).catch(() => {});
+    await sleep(3000);
 
     const pageText = await page.evaluate(() => document.body.innerText || '').catch(() => '');
     log(jobId, `[outlook] ${folder}: body=${pageText.replace(/\n/g,' ').slice(0,120)}`);
