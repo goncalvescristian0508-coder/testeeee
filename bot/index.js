@@ -31,8 +31,10 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 // ── Outlook (contexto incógnito no mesmo browser) ─────────────────────────────
 
-async function loginOutlook(jobId, page, email, password) {
+async function loginOutlook(jobId, page, email, password, proxyUser, proxyPass) {
   log(jobId, '[outlook] A fazer login...');
+  // Autenticar proxy também para a página do Outlook (IP residencial em vez de IP do datacenter)
+  if (proxyUser) await page.authenticate({ username: proxyUser, password: proxyPass });
   await page.setUserAgent(
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
   );
@@ -44,10 +46,20 @@ async function loginOutlook(jobId, page, email, password) {
   );
 
   // ── Campo de email ──
-  await page.waitForSelector(
-    '#usernameEntry, input[type="email"], input[name="loginfmt"]',
-    { visible: true, timeout: 15000 }
-  );
+  log(jobId, `[outlook] URL após nav: ${page.url()}`);
+  try {
+    await page.waitForSelector(
+      '#usernameEntry, input[type="email"], input[name="loginfmt"]',
+      { visible: true, timeout: 30000 }
+    );
+  } catch (e) {
+    const title = await page.title().catch(() => '?');
+    const inputs = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('input')).map(i => `${i.type}#${i.id}`)
+    ).catch(() => []);
+    log(jobId, `[outlook] Selector timeout. title="${title}" inputs=[${inputs.join(',')}] url=${page.url()}`);
+    throw e;
+  }
   const emailEl = await page.$('#usernameEntry, input[type="email"], input[name="loginfmt"]');
   await emailEl.click({ clickCount: 3 });
   await emailEl.type(email, { delay: 60 });
@@ -131,13 +143,13 @@ async function scanFolder(jobId, page, email, folderUrl) {
   }
 }
 
-async function waitForEmailOtp(jobId, email, password, browser) {
+async function waitForEmailOtp(jobId, email, password, browser, proxyUser, proxyPass) {
   log(jobId, '[outlook] Abrindo contexto incógnito...');
   const ctx = await browser.createIncognitoBrowserContext();
   const emailPage = await ctx.newPage();
 
   try {
-    await loginOutlook(jobId, emailPage, email, password);
+    await loginOutlook(jobId, emailPage, email, password, proxyUser, proxyPass);
 
     const folders = [
       'https://outlook.live.com/mail/0/inbox',
@@ -273,8 +285,7 @@ async function runJob(job) {
   ];
   if (!noProxy) {
     args.push('--proxy-server=http://gw.dataimpulse.com:823');
-    // Outlook usa conexão directa (sem proxy) — evita interferência
-    args.push('--proxy-bypass-list=*.live.com,*.office365.com,*.microsoft.com,*.hotmail.com,*.outlook.com');
+    // Sem bypass — Outlook também passa pelo proxy residencial (evita bloqueio do IP do datacenter)
   }
 
   const browser = await puppeteerExtra.launch({
@@ -352,7 +363,7 @@ async function runJob(job) {
 
     if (needsOtp) {
       log(id, 'Instagram pede verificação por email...');
-      const otp = await waitForEmailOtp(id, email, emailPassword, browser);
+      const otp = await waitForEmailOtp(id, email, emailPassword, browser, proxyUser, proxyPass);
 
       log(id, `Inserindo OTP: ${otp}`);
       const otpSel = 'input[name="confirmationCode"], input[name="verificationCode"], input[aria-label*="code" i], input[aria-label*="código" i], input[autocomplete="one-time-code"]';
