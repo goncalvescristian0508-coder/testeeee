@@ -138,9 +138,10 @@ async function scanFolder(jobId, page, email, folderUrl, triedCodes = new Set())
   const folder = folderUrl.split('/').pop();
   try {
     await page.goto(folderUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
-    await sleep(3000);
+    await sleep(6000); // Outlook SPA precisa de tempo para renderizar a lista de emails
 
     const pageText = await page.evaluate(() => document.body.innerText || '').catch(() => '');
+    log(jobId, `[outlook] ${folder}: body=${pageText.replace(/\n/g,' ').slice(0,120)}`);
 
     // Tentativa rápida: código visível na lista (sujeito/preview)
     const listMatches = [];
@@ -676,22 +677,21 @@ async function runJob(job) {
       await sleep(800);
       const visInputs = await getVisibleInputs();
       const url = page.url();
-      log(id, `[wizard] step=${wizStep} url=${url.split('/').slice(-2).join('/')} inputs(${visInputs.length})`);
+      const wizBody = await page.evaluate(() => (document.body.innerText||'').replace(/\n/g,' ').slice(0,200)).catch(()=>'');
+      log(id, `[wizard] step=${wizStep} url=${url.split('/').slice(-2).join('/')} inputs(${visInputs.length}) body: ${wizBody}`);
 
       if (!/accounts\/signup|accounts\/emailsignup/i.test(url)) {
         log(id, '[wizard] Saiu do signup — conta criada!');
         break;
       }
 
-      // OTP real
-      const isRealOtpInput = visInputs.some(i =>
-        i.ac === 'one-time-code' ||
-        /confirmationCode|verificationCode|security_code/i.test(i.name + i.id) ||
-        (i.maxLen === 6 && i.type !== 'hidden') ||
-        visInputs.filter(x => x.maxLen === 1).length >= 6
-      );
+      // OTP real — só trugar em condições explícitas (maxLen=6 sozinho dá false positives no signup!)
+      const isRealOtpInput =
+        visInputs.some(i => i.ac === 'one-time-code') ||
+        visInputs.some(i => /confirmationCode|verificationCode|security_code/i.test(i.name + i.id)) ||
+        visInputs.filter(x => x.maxLen === 1 && x.type !== 'hidden').length >= 6;
       if (isRealOtpInput) {
-        log(id, '[wizard] OTP detectado');
+        log(id, `[wizard] OTP detectado: ${JSON.stringify(visInputs)}`);
         otpDetected = true;
         break;
       }
