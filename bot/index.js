@@ -3,7 +3,6 @@
 const express = require('express');
 const puppeteerExtra = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
-const { ImapFlow } = require('imapflow');
 const { v4: uuidv4 } = require('uuid');
 
 puppeteerExtra.use(StealthPlugin());
@@ -27,68 +26,25 @@ function log(jobId, msg) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// ── IMAP email OTP reader ──────────────────────────────────────────────────────
+// ── Wait for OTP delivered externally (by otp-helper running on local PC) ─────
 
-async function waitForEmailOtp(jobId, email, password, maxWait = 180000) {
-  log(jobId, 'Waiting for Instagram OTP via IMAP...');
+async function waitForOtp(jobId, maxWait = 300000) {
+  log(jobId, 'Waiting for OTP — ensure otp-helper.js is running on your PC');
+  jobs[jobId].status = 'waiting_otp';
+
   const deadline = Date.now() + maxWait;
-  let attempt = 0;
-
   while (Date.now() < deadline) {
-    attempt++;
-    // First attempt: wait 15s for email to arrive; after that 8s between tries
-    await sleep(attempt === 1 ? 15000 : 8000);
-    log(jobId, `IMAP scan attempt #${attempt}...`);
-
-    const client = new ImapFlow({
-      host: 'outlook.office365.com',
-      port: 993,
-      secure: true,
-      auth: { user: email, pass: password },
-      logger: false,
-    });
-
-    try {
-      await client.connect();
-
-      const folders = ['INBOX', 'Junk'];
-      for (const folder of folders) {
-        try {
-          await client.mailboxOpen(folder, { readOnly: true });
-        } catch {
-          continue;
-        }
-
-        // Search Instagram emails in the last 20 minutes
-        const since = new Date(Date.now() - 20 * 60 * 1000);
-        const uids = await client.search({ from: 'instagram', since }).catch(() => []);
-        log(jobId, `IMAP ${folder}: ${uids.length} Instagram messages`);
-
-        for (const uid of uids.slice(-5)) {
-          let source = '';
-          try {
-            for await (const msg of client.fetch([uid], { source: true })) {
-              source = msg.source.toString();
-            }
-          } catch {}
-          const m = source.match(/\b(\d{6})\b/);
-          if (m) {
-            log(jobId, `OTP found via IMAP: ${m[1]}`);
-            await client.logout().catch(() => {});
-            return m[1];
-          }
-        }
-      }
-
-      await client.logout().catch(() => {});
-      log(jobId, 'OTP not found yet, retrying...');
-    } catch (e) {
-      log(jobId, `IMAP error: ${e.message}`);
-      await client.logout().catch(() => {});
+    if (jobs[jobId].pendingOtp) {
+      const code = jobs[jobId].pendingOtp;
+      jobs[jobId].pendingOtp = null;
+      jobs[jobId].status = 'running';
+      log(jobId, `OTP received: ${code}`);
+      return code;
     }
+    await sleep(2000);
   }
 
-  throw new Error('Timeout waiting for email OTP');
+  throw new Error('Timeout waiting for OTP (5 min). Is otp-helper running?');
 }
 
 // ── Instagram helpers ──────────────────────────────────────────────────────────
@@ -135,7 +91,6 @@ async function handleBirthday(jobId, page) {
   }
 }
 
-// Fill name/username/password if Instagram shows those fields (happens after OTP on some flows)
 async function fillProfileFields(jobId, page, email, emailPassword) {
   const hasName = await typeInto(
     page,
@@ -189,13 +144,13 @@ async function runJob(job) {
   });
 
   try {
-    // ── Open Instagram signup ──
     const page = await browser.newPage();
     await page.setUserAgent(
       'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1'
     );
     if (!noProxy) await page.authenticate({ username: proxyUser, password: proxyPass });
 
+    // ── Instagram signup ──
     log(id, 'Navigating to Instagram signup...');
     await page.goto('https://www.instagram.com/accounts/emailsignup/', {
       waitUntil: 'networkidle2',
@@ -205,7 +160,7 @@ async function runJob(job) {
 
     log(id, `Page loaded: "${await page.title()}" | URL: ${page.url()}`);
 
-    // Accept cookies if shown
+    // Accept cookies
     try {
       const btns = await page.$$('button');
       for (const btn of btns) {
@@ -214,9 +169,7 @@ async function runJob(job) {
       }
     } catch {}
 
-    // ── Step 1: Find the signup input (email or phone/email combined field) ──
-    // Instagram uses a single input that accepts both email and phone
-    log(id, `Page URL: ${page.url()}`);
+    // Find signup input (Instagram uses type="tel" that also accepts email)
     const EMAIL_SELS = [
       'input[name="emailOrPhone"]',
       'input[type="email"]',
@@ -224,32 +177,31 @@ async function runJob(job) {
       'input[aria-label*="email" i]',
       'input[placeholder*="email" i]',
       'input[placeholder*="e-mail" i]',
-      'input[type="tel"]',   // phone/email combined field
+      'input[type="tel"]',
       'input[type="text"]',
     ];
     let emailEl = null;
     for (const sel of EMAIL_SELS) {
       emailEl = await page.$(sel).catch(() => null);
-      if (emailEl) { log(id, `Signup input found: ${sel}`); break; }
+      if (emailEl) { log(id, `Signup input: ${sel}`); break; }
     }
-
     if (!emailEl) {
-      const inputsInfo = await page.evaluate(() =>
-        Array.from(document.querySelectorAll('input')).map(i =>
+      const allInputs = await page.evaluate(() =>
+        Array.from(document.querySelectorAll('input')).map((i) =>
           `type=${i.type} name=${i.name} ph=${i.placeholder}`
         )
       ).catch(() => []);
-      log(id, `No input found. All inputs: ${inputsInfo.join(' | ')}`);
+      log(id, `No input found. Inputs: ${allInputs.join(' | ')}`);
       emailEl = await page.$('input:not([type="hidden"])').catch(() => null);
       if (!emailEl) throw new Error('Could not find signup input');
     }
 
-    log(id, 'Typing email into signup input...');
+    log(id, 'Typing email...');
     await emailEl.click({ clickCount: 3 });
     await emailEl.type(email, { delay: 70 });
     await sleep(500);
 
-    // Fill name/username/password if visible (classic all-in-one form)
+    // Fill other fields if already visible
     await typeInto(page, 'input[name="fullName"], input[placeholder*="Full name" i], input[aria-label*="Full name" i]', deriveName(email));
     await sleep(400);
     await typeInto(page, 'input[name="username"], input[placeholder*="username" i], input[aria-label*="username" i]', deriveUsername(email));
@@ -261,41 +213,34 @@ async function runJob(job) {
     await clickButton(page, 'button[type="submit"]');
     await sleep(4000);
 
-    // ── Step 3: Birthday ──
     await handleBirthday(id, page);
 
-    // ── Step 4: Email OTP ──
+    // ── OTP ──
     const otpContent = await page.content();
     const needsOtp = /confirmationCode|verificationCode|enter.*code|código|verification code/i.test(otpContent);
 
     if (needsOtp) {
       log(id, 'Instagram requires email OTP...');
-      const otp = await waitForEmailOtp(id, email, emailPassword);
+      const otp = await waitForOtp(id);
 
       log(id, `Entering OTP: ${otp}`);
-      const otpSelectors = 'input[name="confirmationCode"], input[name="verificationCode"], input[aria-label*="code" i], input[aria-label*="código" i], input[autocomplete="one-time-code"]';
-      const otpTyped = await typeInto(page, otpSelectors, otp);
+      const otpSel = 'input[name="confirmationCode"], input[name="verificationCode"], input[aria-label*="code" i], input[aria-label*="código" i], input[autocomplete="one-time-code"]';
+      const typed = await typeInto(page, otpSel, otp);
 
-      if (!otpTyped) {
-        // Try any text/tel/number input — OTP fields often have maxLength 6 or no type restriction
+      if (!typed) {
         const inputs = await page.$$('input[type="text"], input[type="tel"], input[type="number"], input:not([type="hidden"])');
         for (const inp of inputs) {
-          const info = await inp.evaluate((el) => ({ maxLen: el.maxLength, type: el.type, name: el.name }));
+          const info = await inp.evaluate((el) => ({ maxLen: el.maxLength, name: el.name }));
           if (info.maxLen === 6 || /code|verification|confirm/i.test(info.name)) {
             await inp.click({ clickCount: 3 });
             await inp.type(otp, { delay: 100 });
-            log(id, `OTP entered via fallback (maxLen=${info.maxLen} name=${info.name})`);
+            log(id, `OTP via fallback (name=${info.name})`);
             break;
           }
         }
-        // Last resort: first visible non-hidden input
-        if (!otpTyped) {
-          const firstInp = await page.$('input:not([type="hidden"])');
-          if (firstInp) {
-            await firstInp.click({ clickCount: 3 });
-            await firstInp.type(otp, { delay: 100 });
-            log(id, 'OTP entered via first-input last-resort');
-          }
+        if (!typed) {
+          const first = await page.$('input:not([type="hidden"])');
+          if (first) { await first.click({ clickCount: 3 }); await first.type(otp, { delay: 100 }); }
         }
       }
 
@@ -305,23 +250,20 @@ async function runJob(job) {
       log(id, `Post-OTP URL: ${page.url()}`);
     }
 
-    // ── Step 5: Profile fields after OTP (some flows show them here) ──
+    // ── Post-OTP profile fields ──
     for (let i = 0; i < 3; i++) {
       const filled = await fillProfileFields(id, page, email, emailPassword);
       if (!filled) break;
-      log(id, `Post-OTP profile fill ${i + 1} done. URL: ${page.url()}`);
+      log(id, `Profile fill ${i + 1} done. URL: ${page.url()}`);
       await handleBirthday(id, page);
     }
 
-    // ── Step 6: Terms / extra screens (only if NOT on signup pages) ──
+    // ── Extra screens (terms, etc.) ──
     for (let i = 0; i < 5; i++) {
       const stepUrl = page.url();
       const stepContent = await page.content();
       log(id, `Extra step ${i + 1}: URL=${stepUrl}`);
-
-      // Don't loop on signup pages — we can't progress from there
       if (/accounts\/signup|accounts\/emailsignup/i.test(stepUrl)) break;
-
       if (/\bterms\b|\btermos\b|\bagree\b|\bconcordo\b/i.test(stepContent)) {
         log(id, 'Accepting terms...');
         await clickButton(page, ['button[type="submit"]', 'button[type="button"]']);
@@ -333,12 +275,11 @@ async function runJob(job) {
       }
     }
 
-    // ── Determine result ──
+    // ── Result ──
     const finalUrl = page.url();
     const finalContent = await page.content();
     log(id, `Finished. URL: ${finalUrl}`);
 
-    // Check for actual account suspension (not just HTML "disabled" attribute)
     if (/your account has been (suspended|disabled)|conta.*suspensa|conta.*desativad/i.test(finalContent)) {
       job.status = 'suspended';
     } else if (/accounts\/signup|accounts\/emailsignup/i.test(finalUrl)) {
@@ -376,6 +317,7 @@ app.post('/create-account', authMiddleware, (req, res) => {
     proxyPass: proxyPass || DEFAULT_PROXY_PASS,
     noProxy: Boolean(noProxy),
     status: 'running',
+    pendingOtp: null,
     instagramUrl: null,
     error: null,
     logs: [],
@@ -388,10 +330,26 @@ app.post('/create-account', authMiddleware, (req, res) => {
   res.json({ jobId: id, statusUrl: `/status/${id}` });
 });
 
+// Called by otp-helper.js running on local PC
+app.post('/provide-otp/:id', authMiddleware, (req, res) => {
+  const job = jobs[req.params.id];
+  if (!job) return res.status(404).json({ error: 'Job not found' });
+  if (job.status !== 'waiting_otp') return res.status(409).json({ error: `Job not waiting for OTP (status: ${job.status})` });
+
+  const { code } = req.body;
+  if (!code || !/^\d{6}$/.test(String(code))) {
+    return res.status(400).json({ error: 'Invalid code — must be 6 digits' });
+  }
+
+  job.pendingOtp = String(code);
+  log(job.id, `OTP provided via API: ${code}`);
+  res.json({ ok: true, jobId: job.id });
+});
+
 app.get('/status/:id', authMiddleware, (req, res) => {
   const job = jobs[req.params.id];
   if (!job) return res.status(404).json({ error: 'Job not found' });
-  const { emailPassword, ...safe } = job;
+  const { emailPassword, pendingOtp, ...safe } = job;
   res.json(safe);
 });
 
