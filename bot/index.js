@@ -439,21 +439,40 @@ async function runJob(job) {
       if (!emailEl) throw new Error('Não foi possível encontrar o campo de signup');
     }
 
+    // ── Mudar para o modo de registo por email (se estiver no modo telefone) ──
+    // Instagram mobile mostra o formulário de telefone por padrão.
+    // Clicar em "Sign up with email" / "Use email address" muda para o modo email.
+    const switchedToEmail = await page.evaluate(() => {
+      const btns = Array.from(document.querySelectorAll('button, [role="button"], a, span, div'));
+      const btn = btns.find(b => /sign up with email|use email|usar email|usar e-mail|email address|endereço de email/i.test((b.textContent || '').trim()));
+      if (btn) { btn.click(); return (btn.textContent || '').trim().slice(0, 40); }
+      return null;
+    });
+    if (switchedToEmail) {
+      log(id, `Clicou em modo email: "${switchedToEmail}"`);
+      await sleep(3000);
+      // Re-encontrar o campo de email agora que o formulário mudou
+      for (const sel of EMAIL_SELS) {
+        const newEl = await page.$(sel).catch(() => null);
+        if (newEl) { emailEl = newEl; log(id, `Campo email (pós-switch): ${sel}`); break; }
+      }
+    }
+
     log(id, 'Digitando email...');
     await emailEl.click({ clickCount: 3 });
     await emailEl.type(email, { delay: 70 });
     await sleep(1000);
 
-    // Dump botões antes de submeter
+    // Dump botões antes de submeter (diagnóstico)
     const btnsAtStart = await page.evaluate(() =>
       Array.from(document.querySelectorAll('button, [role="button"]'))
-        .map(b => `${b.tagName}|type=${b.type}|txt="${(b.textContent || '').trim().slice(0, 30)}"`)
+        .map(b => `${b.tagName}|txt="${(b.textContent || '').trim().slice(0, 30)}"`)
     ).catch(() => []);
-    log(id, `Botões no passo 1: ${btnsAtStart.join(' :: ')}`);
+    log(id, `Botões antes do submit: ${btnsAtStart.join(' :: ')}`);
 
-    log(id, 'Avançando do passo 1 (email) via Enter...');
+    log(id, 'Avançando passo 1 via Enter...');
     await page.keyboard.press('Enter');
-    await sleep(7000); // Instagram precisa de tempo para validar email e avançar
+    await sleep(7000);
 
     // ── Wizard multi-passo do Instagram ──────────────────────────────────────────
     // O Instagram mobile mostra os campos passo-a-passo no mesmo URL.
