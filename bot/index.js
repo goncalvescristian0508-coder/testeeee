@@ -340,40 +340,26 @@ async function runJob(job) {
       }
     } catch {}
 
-    // ── Step 1: Ensure we're on the EMAIL signup form ──
-    // Instagram may redirect to /signup/phone/ — click "Sign up with email" if so
-    for (let attempt = 0; attempt < 3; attempt++) {
-      const currentUrl = page.url();
-      if (!currentUrl.includes('/signup/phone') && !currentUrl.includes('accounts/signup/')) break;
-
-      log(id, `On phone page (attempt ${attempt + 1}), looking for email signup link...`);
-      const switched = await page.evaluate(() => {
-        for (const el of document.querySelectorAll('a, button')) {
-          if (/sign up with email|use email/i.test(el.textContent)) {
+    // ── Step 1: Switch to email signup if on phone page ──
+    if (page.url().includes('/signup/phone') || page.url().includes('accounts/signup/')) {
+      log(id, 'Phone page detected — clicking email link...');
+      const clicked = await page.evaluate(() => {
+        // Any link/button with "email" in text or href
+        for (const el of document.querySelectorAll('a, button, span[role="button"]')) {
+          if (/email/i.test(el.textContent) || (el.href && /email/i.test(el.href))) {
             el.click();
-            return el.textContent.trim();
+            return el.textContent.trim() || el.href;
           }
         }
-        const emailLink = document.querySelector('a[href*="emailsignup"], a[href*="email"]');
-        if (emailLink) { emailLink.click(); return emailLink.href; }
         return null;
       }).catch(() => null);
-
-      if (switched) {
-        log(id, `Clicked: "${switched}"`);
-      } else {
-        log(id, 'No email link found — navigating directly to emailsignup');
-        await page.goto('https://www.instagram.com/accounts/emailsignup/', {
-          waitUntil: 'networkidle2', timeout: 30000,
-        }).catch(() => {});
-      }
+      log(id, `Email link result: ${clicked}`);
       await sleep(3000);
+      log(id, `After email link: ${page.url()}`);
     }
 
-    log(id, `After phone→email switch: ${page.url()}`);
-
-    // ── Step 2: Find and fill email input (wait up to 10s) ──
-    log(id, 'Waiting for email field...');
+    // ── Step 2: Find and fill email input ──
+    log(id, 'Looking for email field...');
     const EMAIL_SELS = [
       'input[name="emailOrPhone"]',
       'input[type="email"]',
@@ -385,17 +371,20 @@ async function runJob(job) {
     let emailEl = null;
     for (const sel of EMAIL_SELS) {
       try { emailEl = await page.waitForSelector(sel, { timeout: 3000 }); } catch {}
-      if (emailEl) { log(id, `Email field: ${sel}`); break; }
+      if (emailEl) { log(id, `Email field found: ${sel}`); break; }
     }
 
     if (!emailEl) {
       const inputsInfo = await page.evaluate(() =>
         Array.from(document.querySelectorAll('input')).map(i =>
-          `type=${i.type} name=${i.name} placeholder=${i.placeholder}`
+          `type=${i.type} name=${i.name} ph=${i.placeholder}`
         )
       ).catch(() => []);
-      log(id, `Email field not found. Inputs on page: ${inputsInfo.join(' | ')}`);
-      throw new Error('Could not find email input on Instagram signup page');
+      log(id, `No email field. Inputs: ${inputsInfo.join(' | ')}`);
+      // Last resort: first visible input
+      emailEl = await page.$('input:not([type="hidden"])').catch(() => null);
+      if (!emailEl) throw new Error('Could not find email input on Instagram signup page');
+      log(id, 'Using first visible input as fallback');
     }
 
     await emailEl.click({ clickCount: 3 });
@@ -431,14 +420,24 @@ async function runJob(job) {
       const otpTyped = await typeInto(page, otpSelectors, otp);
 
       if (!otpTyped) {
-        const inputs = await page.$$('input');
+        // Try any text/tel/number input — OTP fields often have maxLength 6 or no type restriction
+        const inputs = await page.$$('input[type="text"], input[type="tel"], input[type="number"], input:not([type="hidden"])');
         for (const inp of inputs) {
-          const maxLen = await inp.evaluate((el) => el.maxLength);
-          if (maxLen === 6) {
+          const info = await inp.evaluate((el) => ({ maxLen: el.maxLength, type: el.type, name: el.name }));
+          if (info.maxLen === 6 || /code|verification|confirm/i.test(info.name)) {
             await inp.click({ clickCount: 3 });
             await inp.type(otp, { delay: 100 });
-            log(id, 'OTP entered via maxLength=6 fallback');
+            log(id, `OTP entered via fallback (maxLen=${info.maxLen} name=${info.name})`);
             break;
+          }
+        }
+        // Last resort: first visible non-hidden input
+        if (!otpTyped) {
+          const firstInp = await page.$('input:not([type="hidden"])');
+          if (firstInp) {
+            await firstInp.click({ clickCount: 3 });
+            await firstInp.type(otp, { delay: 100 });
+            log(id, 'OTP entered via first-input last-resort');
           }
         }
       }
