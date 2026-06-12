@@ -431,12 +431,24 @@ async function runJob(job) {
       if (emailEl) { log(id, `Campo signup: ${sel}`); break; }
     }
     if (!emailEl) {
-      const info = await page.evaluate(() =>
-        Array.from(document.querySelectorAll('input')).map(i => `type=${i.type} name=${i.name} ph=${i.placeholder}`)
-      ).catch(() => []);
-      log(id, `Nenhum campo encontrado. Inputs: ${info.join(' | ')}`);
-      emailEl = await page.$('input:not([type="hidden"])').catch(() => null);
-      if (!emailEl) throw new Error('Não foi possível encontrar o campo de signup');
+      // Retry até 4x com 4s de espera — Instagram SPA pode demorar a renderizar
+      for (let retry = 0; retry < 4 && !emailEl; retry++) {
+        const bodySnippet = await page.evaluate(() => (document.body.innerText || '').slice(0, 200)).catch(() => '');
+        const allInputs = await page.evaluate(() =>
+          Array.from(document.querySelectorAll('input')).map(i => `type=${i.type} name=${i.name} ph=${i.placeholder}`)
+        ).catch(() => []);
+        log(id, `[signup retry ${retry}] Inputs: [${allInputs.join(' | ')}] | Body: ${bodySnippet.replace(/\n/g, ' ').slice(0, 150)}`);
+        await sleep(4000);
+        for (const sel of EMAIL_SELS) {
+          emailEl = await page.$(sel).catch(() => null);
+          if (emailEl) { log(id, `Campo encontrado (retry ${retry}): ${sel}`); break; }
+        }
+      }
+      if (!emailEl) {
+        const bodyFull = await page.evaluate(() => (document.body.innerText || '').slice(0, 400)).catch(() => '');
+        log(id, `Falha total. URL: ${page.url()} | Body: ${bodyFull.replace(/\n/g, ' ')}`);
+        throw new Error('Não foi possível encontrar o campo de signup');
+      }
     }
 
     // ── Mudar para modo email se Instagram mostrar formulário de telefone ──
