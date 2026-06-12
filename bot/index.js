@@ -508,15 +508,10 @@ async function runJob(job) {
       const triedCodes = new Set();
       try {
         await loginOutlook(id, pg, email, emailPassword, proxyUser, proxyPass);
-        // Pre-scan só em other/junk — NÃO inbox. O código fresco do Instagram vai para inbox.
-        // Se escaneamos inbox no pre-scan, o código recém-chegado entra em triedCodes e é pulado!
-        for (const folder of [
-          'https://outlook.live.com/mail/0/other',
-          'https://outlook.live.com/mail/0/junkemail',
-        ]) {
-          await scanFolder(id, pg, email, folder, triedCodes);
-        }
-        log(id, `[outlook-early] Pre-scan completo. Códigos pré-existentes (${triedCodes.size}): ${[...triedCodes].join(', ') || 'nenhum'}`);
+        // SEM pre-scan — o Instagram pode reenviar o mesmo código de sessões anteriores.
+        // Se pré-escaneamos e adicionamos a triedCodes, o código fresco seria pulado.
+        // O bot tenta cada código encontrado; rejeitados entram em triedCodes na fase OTP.
+        log(id, '[outlook-early] Login concluído, aguardando OTP...');
       } catch (e) {
         log(id, `[outlook-early] Erro no pre-scan (continuando): ${e.message}`);
       }
