@@ -54,15 +54,48 @@ async function loginOutlook(page, email, password) {
   await page.keyboard.press('Enter');
   await sleep(4000);
 
+  // "Stay signed in?" → click No
   try {
     const noBtn = await page.$('#idBtn_Back');
     if (noBtn) { await noBtn.click(); await sleep(2000); }
   } catch {}
 
-  await page.waitForFunction(
-    () => window.location.href.includes('outlook.live.com'),
-    { timeout: 20000 }
-  ).catch(() => {});
+  // Skip any Microsoft security/proofs pages (add phone, add email, etc.)
+  for (let i = 0; i < 4; i++) {
+    await sleep(1500);
+    const url = page.url();
+    if (url.includes('outlook.live.com')) break;
+    if (url.includes('account.live.com/proofs') || url.includes('account.live.com/security') || url.includes('login.live.com')) {
+      log('outlook', `Skipping security page: ${url}`);
+      // Try "Skip for now" / "I'll add it later" / "Cancel" links or buttons
+      const skipped = await page.evaluate(() => {
+        const texts = ['skip', 'later', 'cancel', 'not now', 'maybe later'];
+        const els = Array.from(document.querySelectorAll('a, button, input[type="button"]'));
+        for (const el of els) {
+          if (texts.some(t => el.textContent.toLowerCase().includes(t))) {
+            el.click();
+            return el.textContent.trim();
+          }
+        }
+        return null;
+      });
+      if (skipped) {
+        log('outlook', `Clicked skip: "${skipped}"`);
+      } else {
+        // Navigate directly to inbox
+        log('outlook', 'No skip button found — navigating directly to inbox');
+        await page.goto('https://outlook.live.com/mail/0/inbox', { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+        break;
+      }
+    }
+  }
+
+  // Final fallback: go to inbox directly
+  if (!page.url().includes('outlook.live.com')) {
+    log('outlook', 'Forcing navigation to Outlook inbox');
+    await page.goto('https://outlook.live.com/mail/0/inbox', { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+    await sleep(3000);
+  }
 
   log('outlook', `Outlook ready. URL: ${page.url()}`);
 }
