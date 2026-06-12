@@ -137,8 +137,13 @@ async function loginOutlook(jobId, page, email, password, proxyUser, proxyPass) 
 async function scanFolder(jobId, page, email, folderUrl, triedCodes = new Set()) {
   const folder = folderUrl.split('/').pop();
   try {
-    await page.goto(folderUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
-    await sleep(6000); // Outlook SPA precisa de tempo para renderizar a lista de emails
+    await page.goto(folderUrl, { waitUntil: 'domcontentloaded', timeout: 25000 });
+    // Aguardar SPA renderizar (Outlook é React — body fica vazio até JS executar)
+    await page.waitForFunction(
+      () => (document.body.innerText || '').length > 200,
+      { timeout: 20000, polling: 1000 }
+    ).catch(() => {});
+    await sleep(2000);
 
     const pageText = await page.evaluate(() => document.body.innerText || '').catch(() => '');
     log(jobId, `[outlook] ${folder}: body=${pageText.replace(/\n/g,' ').slice(0,120)}`);
@@ -685,13 +690,15 @@ async function runJob(job) {
         break;
       }
 
-      // OTP real — só trugar em condições explícitas (maxLen=6 sozinho dá false positives no signup!)
+      // OTP real — verificar por body text (mais confiável que campos ofuscados do Instagram)
+      const isOtpBody = /confirmation code|6.?digit code|verify your email|enter the code|c[oó]digo de confirma/i.test(wizBody);
       const isRealOtpInput =
+        isOtpBody ||
         visInputs.some(i => i.ac === 'one-time-code') ||
         visInputs.some(i => /confirmationCode|verificationCode|security_code/i.test(i.name + i.id)) ||
         visInputs.filter(x => x.maxLen === 1 && x.type !== 'hidden').length >= 6;
       if (isRealOtpInput) {
-        log(id, `[wizard] OTP detectado: ${JSON.stringify(visInputs)}`);
+        log(id, `[wizard] OTP detectado (body="${wizBody.slice(0,80)}" inputs=${visInputs.length})`);
         otpDetected = true;
         break;
       }
@@ -742,7 +749,7 @@ async function runJob(job) {
         }
       }
 
-      const how = await submitForm(page);
+      const how = await submitForm(page).catch(e => `error:${e.message.slice(0,40)}`);
       log(id, `[wizard] Submit via: ${how}`);
       await sleep(3500);
     }
