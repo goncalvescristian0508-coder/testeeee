@@ -576,7 +576,12 @@ async function runJob(job) {
     log(id, 'Submetendo formulário...');
     const submitHow = await submitForm(page);
     log(id, `Submit via: ${submitHow}`);
-    await sleep(5000);
+    await sleep(6000);
+
+    // Logar URL e body após submit para diagnóstico
+    const postSubmitUrl = page.url();
+    const postSubmitBody = await page.evaluate(() => (document.body.innerText || '').slice(0, 600)).catch(() => '');
+    log(id, `Pós-submit: URL=${postSubmitUrl.split('/').slice(-2).join('/')} | Body: ${postSubmitBody.replace(/\n/g,' ').slice(0, 300)}`);
 
     await handleBirthday(id, page);
     await sleep(2000);
@@ -594,7 +599,8 @@ async function runJob(job) {
       await sleep(800);
       const visInputs = await getVisibleInputs();
       const url = page.url();
-      log(id, `[wizard] step=${wizStep} url=${url.split('/').slice(-2).join('/')} inputs(${visInputs.length}): ${visInputs.map(i => `${i.type}[${i.name || i.id || i.ac || i.ph || '?'}|ml:${i.maxLen}]`).join(' ')}`);
+      const bodySnip = await page.evaluate(() => (document.body.innerText || '').replace(/\n/g,' ').slice(0, 200)).catch(() => '');
+      log(id, `[wizard] step=${wizStep} url=${url.split('/').slice(-2).join('/')} inputs(${visInputs.length}) body: ${bodySnip}`);
 
       if (!/accounts\/signup|accounts\/emailsignup/i.test(url)) {
         log(id, '[wizard] Saiu do signup — conta criada!');
