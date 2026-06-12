@@ -285,10 +285,33 @@ async function typeInto(page, selector, value, delay = 70) {
 
 async function clickButton(page, selectors) {
   for (const sel of (Array.isArray(selectors) ? selectors : [selectors])) {
-    const el = await page.$(sel);
+    const el = await page.$(sel).catch(() => null);
     if (el) { await el.click(); return true; }
   }
   return false;
+}
+
+// Click a leaf element whose visible text matches the pattern (handles DIV buttons)
+async function clickByText(page, pattern) {
+  return page.evaluate((pat) => {
+    const re = new RegExp(pat, 'i');
+    const all = [...document.querySelectorAll('*')];
+    const el = all.reverse().find(e => {
+      const txt = (e.innerText || '').trim();
+      return txt.length > 0 && txt.length < 40 && re.test(txt);
+    });
+    if (el) { el.click(); return (el.innerText || '').trim().slice(0, 30); }
+    return null;
+  }, pattern).catch(() => null);
+}
+
+// Submit the current form: try <button type=submit>, then text-based, then Enter
+async function submitForm(page) {
+  if (await clickButton(page, ['button[type="submit"]'])) return 'button[type=submit]';
+  const txt = await clickByText(page, '^(sign up|cadastrar|criar conta|next|avançar|continuar|ok)$');
+  if (txt) return `text:"${txt}"`;
+  await page.keyboard.press('Enter');
+  return 'Enter';
 }
 
 function deriveUsername(email) {
@@ -466,32 +489,58 @@ async function runJob(job) {
       }
     }
 
+    // Dump detalhado de todos os inputs para diagnóstico de locale
+    const inputDump = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('input:not([type="hidden"])'))
+        .map(i => `${i.type}[name=${i.name}|ph=${i.placeholder}|aria=${i.getAttribute('aria-label')}|ml=${i.maxLength}]`)
+    ).catch(() => []);
+    log(id, `Inputs encontrados: ${inputDump.join(' || ')}`);
+
+    // Preencher campos por POSIÇÃO (Instagram ofusca os nomes — labels variam por locale)
+    // Ordem típica no DOM: email, nome completo, username, password
+    const allTextInputs = await page.$$('input[type="text"], input[type="tel"]');
+    log(id, `Total text/tel inputs: ${allTextInputs.length}`);
+
+    // index 0 = email (já vamos preencher abaixo via emailEl)
+    // index 1 = nome completo
+    // index 2 = username (se existir)
+    const nameInput = allTextInputs[1] || null;
+    const userInput = allTextInputs[2] || null;
+    const passInput = await page.$('input[type="password"]').catch(() => null);
+
     log(id, 'Digitando email...');
     await emailEl.click({ clickCount: 3 });
     await emailEl.type(email, { delay: 70 });
-    await sleep(500);
-
-    // Desktop emailsignup/ tem todos os campos num só ecrã — preencher directamente
-    const nameFilled0 = await typeInto(page, 'input[name="fullName"], input[aria-label*="Full name" i], input[placeholder*="Full name" i]', deriveName(email));
-    if (nameFilled0) log(id, 'Nome preenchido');
     await sleep(400);
-    const userFilled0 = await typeInto(page, 'input[name="username"], input[aria-label*="Username" i], input[placeholder*="Username" i]', deriveUsername(email));
-    if (userFilled0) log(id, 'Username preenchido');
-    await sleep(400);
-    const passFilled0 = await typeInto(page, 'input[name="password"], input[type="password"]', emailPassword);
-    if (passFilled0) log(id, 'Password preenchida');
-    await sleep(600);
 
-    // Log inputs encontrados antes de submeter
-    const inputsBeforeSubmit = await page.evaluate(() =>
-      Array.from(document.querySelectorAll('input:not([type="hidden"])'))
-        .map(i => `${i.type}[${i.name || i.placeholder || i.id || '?'}]`)
-    ).catch(() => []);
-    log(id, `Inputs antes do submit: ${inputsBeforeSubmit.join(', ')}`);
+    if (nameInput) {
+      await nameInput.click({ clickCount: 3 });
+      await nameInput.type(deriveName(email), { delay: 70 });
+      log(id, 'Nome preenchido (posicional idx=1)');
+      await sleep(400);
+    } else {
+      log(id, 'AVISO: campo nome não encontrado (só 1 text input)');
+    }
+
+    if (userInput) {
+      await userInput.click({ clickCount: 3 });
+      await userInput.type(deriveUsername(email), { delay: 70 });
+      log(id, 'Username preenchido (posicional idx=2)');
+      await sleep(400);
+    } else {
+      log(id, 'Username não encontrado — pode aparecer após submit');
+    }
+
+    if (passInput) {
+      await passInput.click({ clickCount: 3 });
+      await passInput.type(emailPassword, { delay: 70 });
+      log(id, 'Password preenchida');
+      await sleep(600);
+    }
 
     log(id, 'Submetendo formulário...');
-    const submitted = await clickButton(page, ['button[type="submit"]']);
-    if (!submitted) await page.keyboard.press('Enter');
+    const submitHow = await submitForm(page);
+    log(id, `Submit via: ${submitHow}`);
     await sleep(4000);
 
     await handleBirthday(id, page);
@@ -538,23 +587,45 @@ async function runJob(job) {
         continue;
       }
 
-      // Preencher qualquer campo restante
-      const nf = await typeInto(page, 'input[name="fullName"], input[aria-label*="Full name" i]', deriveName(email));
-      const uf = await typeInto(page, 'input[name="username"], input[aria-label*="Username" i], input[placeholder*="Username" i]', deriveUsername(email));
-      const pf = await typeInto(page, 'input[name="password"], input[type="password"]', emailPassword);
+      // Preencher campos por posição (locale-agnostic)
+      const wizTextInputs = await page.$$('input[type="text"], input[type="tel"]');
+      const wizPassInput = await page.$('input[type="password"]').catch(() => null);
 
-      if (nf || uf || pf) {
-        log(id, `[wizard] Preencheu: nome=${nf} user=${uf} pass=${pf}`);
-        const sub = await clickButton(page, ['button[type="submit"]', 'button']);
-        if (!sub) await page.keyboard.press('Enter');
-        await sleep(3500);
-        continue;
+      let anyFilled = false;
+      // Se só 1 text input → provável username ou nome de utilizador
+      // Se 2+ → idx 0 = email/name, idx 1 = username
+      if (wizTextInputs.length === 1) {
+        const val = await wizTextInputs[0].evaluate(el => el.value || '');
+        if (!val) {
+          await wizTextInputs[0].click({ clickCount: 3 });
+          await wizTextInputs[0].type(deriveUsername(email), { delay: 70 });
+          log(id, '[wizard] 1 text input — preenchido com username');
+          anyFilled = true;
+        }
+      } else if (wizTextInputs.length >= 2) {
+        for (let ti = 0; ti < wizTextInputs.length; ti++) {
+          const val = await wizTextInputs[ti].evaluate(el => el.value || '');
+          if (!val) {
+            const fill = ti === 0 ? deriveName(email) : deriveUsername(email);
+            await wizTextInputs[ti].click({ clickCount: 3 });
+            await wizTextInputs[ti].type(fill, { delay: 70 });
+            log(id, `[wizard] text[${ti}] preenchido: ${fill.slice(0, 20)}`);
+            anyFilled = true;
+          }
+        }
+      }
+      if (wizPassInput) {
+        const val = await wizPassInput.evaluate(el => el.value || '');
+        if (!val) {
+          await wizPassInput.click({ clickCount: 3 });
+          await wizPassInput.type(emailPassword, { delay: 70 });
+          log(id, '[wizard] password preenchida');
+          anyFilled = true;
+        }
       }
 
-      // Sem campos — tentar avançar
-      const advanced = await clickButton(page, ['button[type="submit"]', 'button']);
-      if (advanced) { await sleep(3500); continue; }
-      await page.keyboard.press('Enter');
+      const how = await submitForm(page);
+      log(id, `[wizard] Submit via: ${how}`);
       await sleep(3500);
     }
 
@@ -655,8 +726,24 @@ async function runJob(job) {
       const visInputs = await getVisibleInputs();
       log(id, `Pós-OTP step ${i + 1}: ${stepUrl.split('/').pop()} | inputs: ${visInputs.map(i => `${i.type}[${i.name || i.ph}]`).join(', ')}`);
 
-      const userFilled = await typeInto(page, 'input[name="username"], input[aria-label*="username" i], input[placeholder*="username" i]', deriveUsername(email));
-      if (userFilled) { log(id, 'Pós-OTP: username preenchido'); await clickButton(page, ['button[type="submit"]', 'button']); await sleep(3500); continue; }
+      const posTextInputs = await page.$$('input[type="text"], input[type="tel"]');
+      const posPassInput = await page.$('input[type="password"]').catch(() => null);
+      let posAnyFilled = false;
+      for (let ti = 0; ti < posTextInputs.length; ti++) {
+        const val = await posTextInputs[ti].evaluate(el => el.value || '');
+        if (!val) {
+          const fill = ti === 0 ? deriveName(email) : deriveUsername(email);
+          await posTextInputs[ti].click({ clickCount: 3 });
+          await posTextInputs[ti].type(fill, { delay: 70 });
+          log(id, `Pós-OTP: text[${ti}] preenchido`);
+          posAnyFilled = true;
+        }
+      }
+      if (posPassInput) {
+        const val = await posPassInput.evaluate(el => el.value || '');
+        if (!val) { await posPassInput.click({ clickCount: 3 }); await posPassInput.type(emailPassword, { delay: 70 }); posAnyFilled = true; }
+      }
+      if (posAnyFilled) { const h = await submitForm(page); log(id, `Pós-OTP submit: ${h}`); await sleep(3500); continue; }
 
       const hasBirthday = await handleBirthday(id, page);
       if (hasBirthday) { await sleep(2000); continue; }
