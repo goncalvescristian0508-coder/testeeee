@@ -404,11 +404,28 @@ async function runJob(job) {
     );
     if (!noProxy) await page.authenticate({ username: proxyUser, password: proxyPass });
 
+    // Interceptar e logar erros de console para diagnóstico
+    page.on('console', msg => {
+      if (msg.type() === 'error') log(id, `[browser console] ${msg.text().slice(0, 120)}`);
+    });
+
     log(id, 'Navegando para o signup do Instagram...');
     await page.goto('https://www.instagram.com/accounts/emailsignup/', {
-      waitUntil: 'networkidle2', timeout: 60000,
+      waitUntil: 'domcontentloaded', timeout: 60000,
     });
-    await sleep(3000);
+
+    // Aguardar React hidratação — esperar até aparecer pelo menos 1 input
+    log(id, 'Aguardando React hidratação...');
+    try {
+      await page.waitForFunction(() => document.querySelectorAll('input').length > 0, { timeout: 25000, polling: 500 });
+    } catch {
+      // Guardar screenshot para diagnóstico
+      await page.screenshot({ path: `/root/ig_${id.slice(0, 8)}.png`, fullPage: false }).catch(() => {});
+      const bodyText = await page.evaluate(() => (document.body.innerText || '').slice(0, 400)).catch(() => '');
+      log(id, `Sem inputs após 25s. URL: ${page.url()} | Body: ${bodyText.replace(/\n/g, ' ')}`);
+    }
+
+    await sleep(1000);
     log(id, `Página: "${await page.title()}" | URL: ${page.url()}`);
 
     // Aceitar cookies
