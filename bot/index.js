@@ -683,7 +683,7 @@ async function runJob(job) {
       await sleep(800);
       const visInputs = await getVisibleInputs();
       const url = page.url();
-      const wizBody = await page.evaluate(() => (document.body.innerText||'').replace(/\n/g,' ').slice(0,200)).catch(()=>'');
+      const wizBody = await page.evaluate(() => (document.body.innerText||'').replace(/\n/g,' ').slice(0,400)).catch(()=>'');
       log(id, `[wizard] step=${wizStep} url=${url.split('/').slice(-2).join('/')} inputs(${visInputs.length}) body: ${wizBody}`);
 
       if (!/accounts\/signup|accounts\/emailsignup/i.test(url)) {
@@ -722,32 +722,42 @@ async function runJob(job) {
 
       let anyFilled = false;
       for (let ti = 0; ti < wizTextInputs.length; ti++) {
-        const val = await wizTextInputs[ti].evaluate(el => el.value || '');
-        if (!val) {
-          const fill = ti === 0 ? deriveName(email) : deriveUsername(email);
-          await wizTextInputs[ti].click({ clickCount: 3 });
-          await wizTextInputs[ti].type(fill, { delay: 70 });
-          log(id, `[wizard] text[${ti}] preenchido: ${fill.slice(0, 20)}`);
-          anyFilled = true;
-        }
+        try {
+          const visible = await wizTextInputs[ti].evaluate(el =>
+            el.offsetParent !== null && !el.disabled && el.getAttribute('aria-hidden') !== 'true'
+          ).catch(() => false);
+          if (!visible) continue;
+          const val = await wizTextInputs[ti].evaluate(el => el.value || '');
+          if (!val) {
+            const fill = ti === 0 ? deriveName(email) : deriveUsername(email);
+            await wizTextInputs[ti].click({ clickCount: 3 });
+            await wizTextInputs[ti].type(fill, { delay: 70 });
+            log(id, `[wizard] text[${ti}] preenchido: ${fill.slice(0, 20)}`);
+            anyFilled = true;
+          }
+        } catch (e) { log(id, `[wizard] text[${ti}] skip: ${e.message.slice(0,40)}`); }
       }
       if (wizUsernameEl) {
-        const val = await wizUsernameEl.evaluate(el => el.value || '');
-        if (!val) {
-          await wizUsernameEl.click({ clickCount: 3 });
-          await wizUsernameEl.type(deriveUsername(email), { delay: 70 });
-          log(id, '[wizard] username preenchido (aria-label)');
-          anyFilled = true;
-        }
+        try {
+          const val = await wizUsernameEl.evaluate(el => el.value || '');
+          if (!val) {
+            await wizUsernameEl.click({ clickCount: 3 });
+            await wizUsernameEl.type(deriveUsername(email), { delay: 70 });
+            log(id, '[wizard] username preenchido (aria-label)');
+            anyFilled = true;
+          }
+        } catch (e) { log(id, `[wizard] username skip: ${e.message.slice(0,40)}`); }
       }
       if (wizPassInput) {
-        const val = await wizPassInput.evaluate(el => el.value || '');
-        if (!val) {
-          await wizPassInput.click({ clickCount: 3 });
-          await wizPassInput.type(emailPassword, { delay: 70 });
-          log(id, '[wizard] password preenchida');
-          anyFilled = true;
-        }
+        try {
+          const val = await wizPassInput.evaluate(el => el.value || '');
+          if (!val) {
+            await wizPassInput.click({ clickCount: 3 });
+            await wizPassInput.type(emailPassword, { delay: 70 });
+            log(id, '[wizard] password preenchida');
+            anyFilled = true;
+          }
+        } catch (e) { log(id, `[wizard] pass skip: ${e.message.slice(0,40)}`); }
       }
 
       const how = await submitForm(page).catch(e => `error:${e.message.slice(0,40)}`);
