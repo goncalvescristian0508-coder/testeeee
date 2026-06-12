@@ -367,14 +367,11 @@ async function runJob(job) {
     headless: true,
     args,
     executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
-    defaultViewport: { width: 390, height: 844, isMobile: true, hasTouch: true },
+    defaultViewport: { width: 1280, height: 800 }, // desktop — Instagram mobile bloqueia headless
   });
 
   try {
     // ── Iniciar Outlook em paralelo com o Instagram ──────────────────────────────
-    // Enquanto o Instagram carrega, fazemos login no Outlook e pré-scaneamos todos
-    // os emails Instagram já existentes → triedCodes fica pré-populado com códigos
-    // antigos antes de precisarmos do OTP da sessão actual.
     log(id, '[outlook-early] A iniciar login em paralelo...');
     const outlookInitPromise = (async () => {
       const ctx = await browser.createIncognitoBrowserContext();
@@ -395,12 +392,13 @@ async function runJob(job) {
       }
       return { ctx, page: pg, triedCodes };
     })();
-    // Não await aqui — corre em paralelo com a navegação Instagram
 
-    // ── Página do Instagram (contexto principal, mobile) ──
+    // ── Página do Instagram (contexto principal, DESKTOP) ──
+    // Desktop UA → Instagram redireciona para /accounts/emailsignup/ com formulário all-in-one.
+    // UA mobile → redireciona para /accounts/signup/phone/ (multi-passo) que falha em headless.
     const page = await browser.newPage();
     await page.setUserAgent(
-      'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1'
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     );
     if (!noProxy) await page.authenticate({ username: proxyUser, password: proxyPass });
 
@@ -468,77 +466,58 @@ async function runJob(job) {
       }
     }
 
-    // ── Mudar para modo email se Instagram mostrar formulário de telefone ──
-    // Encontrar o elemento folha com texto EXATO "Sign up with email" (não um pai que contenha o texto)
-    const switchedToEmail = await page.evaluate(() => {
-      const all = Array.from(document.querySelectorAll('*'));
-      // findLast não está disponível em todos os ambientes — usar reverse().find()
-      const el = [...all].reverse().find(e => {
-        const txt = (e.innerText || '').trim();
-        return txt.length < 60 && /sign up with email|use email address|usar email/i.test(txt);
-      });
-      if (el) { el.click(); return (el.innerText || '').trim().slice(0, 50); }
-      return null;
-    });
-    if (switchedToEmail) {
-      log(id, `Clicou em modo email: "${switchedToEmail}"`);
-      await sleep(4000);
-      // Re-encontrar o campo de email
-      for (const sel of EMAIL_SELS) {
-        const newEl = await page.$(sel).catch(() => null);
-        if (newEl) { emailEl = newEl; log(id, `Campo email (pós-switch): ${sel}`); break; }
-      }
-      // Verificar se os botões mudaram (nova forma deve ter botões diferentes)
-      const newBtns = await page.evaluate(() =>
-        Array.from(document.querySelectorAll('button, [role="button"]'))
-          .map(b => (b.textContent || '').trim().slice(0, 20))
-          .filter(Boolean)
-      ).catch(() => []);
-      log(id, `Botões pós-switch: ${newBtns.join(' | ')}`);
-    } else {
-      log(id, 'Não encontrou "Sign up with email" — já no modo email ou outro fluxo');
-    }
-
     log(id, 'Digitando email...');
     await emailEl.click({ clickCount: 3 });
     await emailEl.type(email, { delay: 70 });
-    await sleep(1000);
+    await sleep(500);
 
-    // Dump botões antes de submeter (diagnóstico)
-    const btnsAtStart = await page.evaluate(() =>
-      Array.from(document.querySelectorAll('button, [role="button"]'))
-        .map(b => `${b.tagName}|txt="${(b.textContent || '').trim().slice(0, 30)}"`)
+    // Desktop emailsignup/ tem todos os campos num só ecrã — preencher directamente
+    const nameFilled0 = await typeInto(page, 'input[name="fullName"], input[aria-label*="Full name" i], input[placeholder*="Full name" i]', deriveName(email));
+    if (nameFilled0) log(id, 'Nome preenchido');
+    await sleep(400);
+    const userFilled0 = await typeInto(page, 'input[name="username"], input[aria-label*="Username" i], input[placeholder*="Username" i]', deriveUsername(email));
+    if (userFilled0) log(id, 'Username preenchido');
+    await sleep(400);
+    const passFilled0 = await typeInto(page, 'input[name="password"], input[type="password"]', emailPassword);
+    if (passFilled0) log(id, 'Password preenchida');
+    await sleep(600);
+
+    // Log inputs encontrados antes de submeter
+    const inputsBeforeSubmit = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('input:not([type="hidden"])'))
+        .map(i => `${i.type}[${i.name || i.placeholder || i.id || '?'}]`)
     ).catch(() => []);
-    log(id, `Botões antes do submit: ${btnsAtStart.join(' :: ')}`);
+    log(id, `Inputs antes do submit: ${inputsBeforeSubmit.join(', ')}`);
 
-    log(id, 'Avançando passo 1 via Enter...');
-    await page.keyboard.press('Enter');
-    await sleep(7000);
+    log(id, 'Submetendo formulário...');
+    const submitted = await clickButton(page, ['button[type="submit"]']);
+    if (!submitted) await page.keyboard.press('Enter');
+    await sleep(4000);
 
-    // ── Wizard multi-passo do Instagram ──────────────────────────────────────────
-    // O Instagram mobile mostra os campos passo-a-passo no mesmo URL.
-    // Percorremos os passos: nome/senha → aniversário → username → OTP
+    await handleBirthday(id, page);
+    await sleep(2000);
+
+    // ── Wizard para passos subsequentes (aniversário, username extra, etc.) ──
     let otpDetected = false;
 
     const getVisibleInputs = () => page.evaluate(() =>
       Array.from(document.querySelectorAll('input:not([type="hidden"])'))
-        .filter(i => i.offsetParent !== null)
+        .filter(i => i.offsetParent !== null || i.getBoundingClientRect().width > 0)
         .map(i => ({ type: i.type, name: i.name, id: i.id, maxLen: i.maxLength, ph: i.placeholder, ac: i.autocomplete }))
     ).catch(() => []);
 
-    for (let wizStep = 0; wizStep < 15; wizStep++) {
-      await sleep(500);
+    for (let wizStep = 0; wizStep < 12; wizStep++) {
+      await sleep(800);
       const visInputs = await getVisibleInputs();
       const url = page.url();
-      log(id, `[wizard] step=${wizStep} url=${url.split('/').pop()} inputs(${visInputs.length}): ${visInputs.map(i => `${i.type}[${i.name || i.id || i.ac || i.ph || '?'}|ml:${i.maxLen}]`).join(' ')}`);
+      log(id, `[wizard] step=${wizStep} url=${url.split('/').slice(-2).join('/')} inputs(${visInputs.length}): ${visInputs.map(i => `${i.type}[${i.name || i.id || i.ac || i.ph || '?'}|ml:${i.maxLen}]`).join(' ')}`);
 
-      // ── Saiu das páginas de signup → sucesso ──
       if (!/accounts\/signup|accounts\/emailsignup/i.test(url)) {
         log(id, '[wizard] Saiu do signup — conta criada!');
         break;
       }
 
-      // ── Página OTP: input real (não falso positivo do bundle JS) ──
+      // OTP real
       const isRealOtpInput = visInputs.some(i =>
         i.ac === 'one-time-code' ||
         /confirmationCode|verificationCode|security_code/i.test(i.name + i.id) ||
@@ -546,72 +525,37 @@ async function runJob(job) {
         visInputs.filter(x => x.maxLen === 1).length >= 6
       );
       if (isRealOtpInput) {
-        log(id, '[wizard] Página de OTP detectada (input real)');
+        log(id, '[wizard] OTP detectado');
         otpDetected = true;
         break;
       }
 
-      // ── Aniversário ──
+      // Birthday
       const hasBirthdaySelect = await page.$('select[title="Month:"], select[aria-label*="Month" i], select[aria-label*="Mês" i]').catch(() => null);
       if (hasBirthdaySelect) {
-        log(id, '[wizard] Passo birthday');
         await handleBirthday(id, page);
         await sleep(2000);
         continue;
       }
 
-      // ── Nome completo ──
-      const nameFilled = await typeInto(page, 'input[name="fullName"], input[aria-label*="Full name" i], input[placeholder*="Full name" i], input[placeholder*="nome" i]', deriveName(email));
-      if (nameFilled) log(id, '[wizard] nome preenchido');
-      await sleep(300);
+      // Preencher qualquer campo restante
+      const nf = await typeInto(page, 'input[name="fullName"], input[aria-label*="Full name" i]', deriveName(email));
+      const uf = await typeInto(page, 'input[name="username"], input[aria-label*="Username" i], input[placeholder*="Username" i]', deriveUsername(email));
+      const pf = await typeInto(page, 'input[name="password"], input[type="password"]', emailPassword);
 
-      // ── Senha ──
-      const passFilled = await typeInto(page, 'input[name="password"], input[type="password"]', emailPassword);
-      if (passFilled) log(id, '[wizard] senha preenchida');
-      await sleep(300);
-
-      // ── Username ──
-      const userFilled = await typeInto(page, 'input[name="username"], input[aria-label*="username" i], input[placeholder*="username" i], input[placeholder*="usuário" i]', deriveUsername(email));
-      if (userFilled) log(id, '[wizard] username preenchido');
-      await sleep(300);
-
-      if (nameFilled || passFilled || userFilled) {
-        log(id, '[wizard] Submetendo passo...');
-        await clickButton(page, ['button[type="submit"]', 'button']);
-        await sleep(4000);
+      if (nf || uf || pf) {
+        log(id, `[wizard] Preencheu: nome=${nf} user=${uf} pass=${pf}`);
+        const sub = await clickButton(page, ['button[type="submit"]', 'button']);
+        if (!sub) await page.keyboard.press('Enter');
+        await sleep(3500);
         continue;
       }
 
-      // Nenhum campo reconhecido — dump todos os botões para diagnóstico
-      const allBtns = await page.evaluate(() =>
-        Array.from(document.querySelectorAll('button, [role="button"]'))
-          .map(b => `${b.tagName}|type=${b.type}|txt="${(b.textContent || '').trim().slice(0, 25)}"`)
-      ).catch(() => []);
-      log(id, `[wizard] step=${wizStep} botões(${allBtns.length}): ${allBtns.join(' :: ')}`);
-
-      // Tentar clicar em botão com texto reconhecido
-      const nextClicked = await page.evaluate(() => {
-        const els = Array.from(document.querySelectorAll('button, [role="button"]'));
-        const b = els.find(e => /next|avançar|continue|próximo|seguinte|ok\b/i.test((e.textContent || '').trim()));
-        if (b) { b.click(); return (b.textContent || '').trim().slice(0, 20); }
-        // Fallback: primeiro button[type="submit"] ou button
-        const sub = document.querySelector('button[type="submit"]');
-        if (sub) { sub.click(); return 'submit'; }
-        const any = document.querySelector('button');
-        if (any) { any.click(); return (any.textContent || '').trim().slice(0, 20) || 'button'; }
-        return null;
-      });
-
-      if (nextClicked) {
-        log(id, `[wizard] Clicou "${nextClicked}"`);
-        await sleep(4000);
-        continue;
-      }
-
-      // Sem botão — pressionar Enter como fallback
-      log(id, '[wizard] Sem botão — Enter');
+      // Sem campos — tentar avançar
+      const advanced = await clickButton(page, ['button[type="submit"]', 'button']);
+      if (advanced) { await sleep(3500); continue; }
       await page.keyboard.press('Enter');
-      await sleep(4000);
+      await sleep(3500);
     }
 
     // ── OTP ────────────────────────────────────────────────────────────────────
