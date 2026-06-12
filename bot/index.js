@@ -77,35 +77,61 @@ async function loginOutlook(jobId, page, email, password, proxyUser, proxyPass) 
   log(jobId, '[outlook] Senha digitada');
   await page.keyboard.press('Enter');
 
-  // ── "Continuar conectado?" ──
+  // ── "Continuar conectado?" — clicar em Não para evitar redirect extra ──
   try {
     await page.waitForSelector(
       '#acceptButton, input[id="idSIButton9"], input[id="idBtn_Back"]',
       { visible: true, timeout: 10000 }
     );
-    const accept = await page.$('#acceptButton, input[id="idSIButton9"]').catch(() => null);
-    if (accept) { await accept.click(); log(jobId, '[outlook] Aceite stay-signed-in'); }
+    // Preferir "Não" (idBtn_Back) — menos redirects; se não existir, aceitar
+    const noBtn = await page.$('input[id="idBtn_Back"]').catch(() => null);
+    if (noBtn) { await noBtn.click().catch(() => {}); log(jobId, '[outlook] Clicou Não em stay-signed-in'); }
+    else {
+      const yesBtn = await page.$('#acceptButton, input[id="idSIButton9"]').catch(() => null);
+      if (yesBtn) { await yesBtn.click().catch(() => {}); log(jobId, '[outlook] Clicou Sim em stay-signed-in'); }
+    }
+    await sleep(2000);
   } catch {}
 
-  // ── Página de segurança / proofs — saltar ──
-  for (let i = 0; i < 8; i++) {
-    await sleep(2000);
-    const url = page.url();
-    if (url.includes('outlook.live.com/mail')) { log(jobId, `[outlook] Inbox pronto: ${url}`); return; }
-    if (/account\.live\.com\/(proofs|recover|resproof)/i.test(url)) {
-      const els = await page.$$('a, button');
-      for (const el of els) {
-        const txt = await el.evaluate(e => (e.textContent || '').trim()).catch(() => '');
-        if (/skip|cancel|later|5 day|não agora/i.test(txt)) {
-          await el.click().catch(() => {});
-          log(jobId, `[outlook] Saltou página de segurança ("${txt.slice(0, 25)}")`);
-          break;
+  // ── Página de segurança / proofs — saltar (envolver em try/catch por cada iteração) ──
+  for (let i = 0; i < 10; i++) {
+    try {
+      await sleep(2500);
+      const url = page.url();
+      log(jobId, `[outlook] post-login step=${i} url=${url.split('?')[0]}`);
+
+      if (url.includes('outlook.live.com/mail')) {
+        log(jobId, '[outlook] Inbox pronto!');
+        return;
+      }
+
+      if (/account\.live\.com\/(proofs|recover|resproof)/i.test(url)) {
+        const els = await page.$$('a, button');
+        for (const el of els) {
+          const txt = await el.evaluate(e => (e.textContent || '').trim()).catch(() => '');
+          if (/skip|cancel|later|5 day|não agora/i.test(txt)) {
+            await el.click().catch(() => {});
+            log(jobId, `[outlook] Saltou segurança ("${txt.slice(0, 25)}")`);
+            // Aguardar navegação após o click
+            await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => {});
+            break;
+          }
         }
       }
+
+      // Se ainda em login.live.com, forçar para inbox ao fim
+      if (i >= 7 && url.includes('live.com')) {
+        log(jobId, '[outlook] A forçar navegação para inbox...');
+        await page.goto('https://outlook.live.com/mail/0/inbox', {
+          waitUntil: 'domcontentloaded', timeout: 20000,
+        }).catch(() => {});
+      }
+    } catch (e) {
+      log(jobId, `[outlook] step=${i} (ignorado): ${e.message}`);
     }
   }
 
-  log(jobId, `[outlook] Login concluído. URL: ${page.url()}`);
+  log(jobId, `[outlook] Login concluído. URL: ${page.url().split('?')[0]}`);
 }
 
 async function scanFolder(jobId, page, email, folderUrl) {
