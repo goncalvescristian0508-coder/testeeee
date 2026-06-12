@@ -305,8 +305,23 @@ async function waitForEmailOtp(jobId, email, password, browser, proxyUser, proxy
 async function typeInto(page, selector, value, delay = 70) {
   const el = await page.$(selector);
   if (!el) return false;
-  await el.click({ clickCount: 3 });
-  await el.type(value, { delay });
+  try {
+    await el.click({ clickCount: 3 });
+  } catch {
+    // Não clicável via Puppeteer — scroll + focus via DOM
+    await el.evaluate(e => {
+      e.scrollIntoView({ block: 'center' });
+      e.focus();
+      if (e.select) e.select();
+    }).catch(() => {});
+    await sleep(300);
+  }
+  try {
+    await el.type(value, { delay });
+  } catch {
+    // Se type também falhar, usar teclado direto
+    await page.keyboard.type(value, { delay });
+  }
   return true;
 }
 
