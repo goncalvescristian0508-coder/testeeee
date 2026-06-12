@@ -339,16 +339,24 @@ function deriveName(email) {
 
 async function handleBirthday(jobId, page) {
   try {
-    await page.waitForSelector('select[title="Month:"]', { timeout: 6000 });
+    // Tentar todos os selectores conhecidos para os dropdowns de aniversário
+    const monthSel = 'select[title="Month:"], select[aria-label*="Month" i], select[aria-label*="Mês" i], select[aria-label*="month" i]';
+    const monthEl = await page.$(monthSel).catch(() => null);
+    if (!monthEl) return false;
+
     log(jobId, 'Preenchendo data de nascimento...');
-    await page.select('select[title="Month:"]', '6');
-    await page.select('select[title="Day:"]', '15');
-    await page.select('select[title="Year:"]', '1995');
+    await page.select(monthSel.split(',')[0].trim(), '').catch(() => {}); // reset first
+    // Selectores individuais para cada dropdown
+    const monthOpts = ['select[title="Month:"]', 'select[aria-label*="Month" i]', 'select[aria-label*="Mês" i]'];
+    const dayOpts   = ['select[title="Day:"]',   'select[aria-label*="Day" i]',   'select[aria-label*="Dia" i]'];
+    const yearOpts  = ['select[title="Year:"]',  'select[aria-label*="Year" i]',  'select[aria-label*="Ano" i]'];
+
+    for (const s of monthOpts) { try { await page.select(s, '6'); break; } catch {} }
+    for (const s of dayOpts)   { try { await page.select(s, '15'); break; } catch {} }
+    for (const s of yearOpts)  { try { await page.select(s, '1995'); break; } catch {} }
     await sleep(600);
-    await clickButton(page, ['button[type="submit"]', 'button[type="button"]']);
-    await sleep(3000);
     return true;
-  } catch { return false; }
+  } catch (e) { return false; }
 }
 
 async function fillProfileFields(jobId, page, email, emailPassword) {
@@ -556,6 +564,10 @@ async function runJob(job) {
       await sleep(600);
     }
 
+    // Preencher aniversário ANTES do submit — é parte do form inicial no desktop!
+    await handleBirthday(id, page);
+    await sleep(1000);
+
     // Aguardar check de disponibilidade do username (API call assíncrono do Instagram ~2-3s)
     await sleep(3500);
 
@@ -582,9 +594,6 @@ async function runJob(job) {
     const postSubmitUrl = page.url();
     const postSubmitBody = await page.evaluate(() => (document.body.innerText || '').slice(0, 600)).catch(() => '');
     log(id, `Pós-submit: URL=${postSubmitUrl.split('/').slice(-2).join('/')} | Body: ${postSubmitBody.replace(/\n/g,' ').slice(0, 300)}`);
-
-    await handleBirthday(id, page);
-    await sleep(2000);
 
     // ── Wizard para passos subsequentes (aniversário, username extra, etc.) ──
     let otpDetected = false;
