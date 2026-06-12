@@ -878,7 +878,7 @@ async function runJob(job) {
         await sleep(500);
         const submitted = await clickButton(page, ['button[type="submit"]', 'button']);
         if (!submitted) await page.keyboard.press('Enter');
-        await sleep(7000);
+        await sleep(12000); // proxy pode demorar; 7s era curto demais
 
         const postOtpUrl = page.url();
         const postContent = await page.content();
@@ -889,7 +889,15 @@ async function runJob(job) {
         }
 
         const rejected = /invalid|expired|incorrect|inv[aá]lid|expirou|expirad|incorreto/i.test(postContent);
-        log(id, `OTP ${otp} ${rejected ? 'rejeitado pelo Instagram' : 'URL não mudou'}. Tentando novo código...`);
+        if (!rejected) {
+          // URL não mudou mas Instagram não rejeitou explicitamente
+          // → pode ser lentidão do proxy ou digitação silenciosa falhou
+          // → retirar do triedCodes para poder re-tentar o mesmo código
+          triedCodes.delete(otp);
+          log(id, `OTP ${otp}: URL não mudou, sem rejeição explícita — liberando para nova tentativa`);
+        } else {
+          log(id, `OTP ${otp} rejeitado pelo Instagram`);
+        }
       }
 
       log(id, `URL final pós-OTP: ${page.url()}`);
