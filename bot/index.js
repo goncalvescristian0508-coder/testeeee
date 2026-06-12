@@ -385,27 +385,41 @@ async function handleBirthday(jobId, page) {
         'div[role="combobox"][aria-label*="Year" i], div[role="combobox"][aria-label*="Ano" i]'
       ).catch(() => null);
       if (yearCombo) {
-        // Scroll dentro do listbox se o ano não estiver visível (lista longa)
         await yearCombo.click();
-        await sleep(1200);
-        const yPicked = await page.evaluate(() => {
-          const opts = [...document.querySelectorAll('[role="option"]')];
-          let opt = opts.find(o => (o.innerText || '').trim() === '1995');
-          if (!opt) {
-            // Scroll the listbox to find 1995
-            const lb = document.querySelector('[role="listbox"]');
-            if (lb) {
-              lb.scrollTop = lb.scrollHeight;
-              opt = [...document.querySelectorAll('[role="option"]')].find(o => (o.innerText || '').trim() === '1995');
+        await sleep(2500); // year list can take time to fully render
+
+        // Tentar encontrar o ano em múltiplas passagens com scroll
+        let yPicked = null;
+        const TARGET_YEAR = '2000'; // 26 anos — mais próximo do topo da lista
+        for (let scrollPass = 0; scrollPass < 6 && !yPicked; scrollPass++) {
+          yPicked = await page.evaluate((yr, pass) => {
+            const opts = [...document.querySelectorAll('[role="option"]')];
+            let opt = opts.find(o => (o.innerText || '').trim() === yr);
+            if (opt) {
+              try { opt.scrollIntoView({ block: 'center' }); } catch {}
+              opt.click();
+              return (opt.innerText || '').trim();
             }
+            // Scroll incremental para carregar mais opções (lista virtual)
+            const lb = document.querySelector('[role="listbox"]');
+            if (lb) lb.scrollTop += 300 * (pass + 1);
+            return null;
+          }, TARGET_YEAR, scrollPass).catch(() => null);
+          if (!yPicked) await sleep(500);
+        }
+
+        // Fallback: teclas de seta (navegação por teclado)
+        if (!yPicked) {
+          log(jobId, `Ano não encontrado em DOM — usando ArrowDown`);
+          await yearCombo.focus().catch(() => {});
+          // 2026 → 2000 = 26 presses (lista mais recente primeiro)
+          for (let i = 0; i < 26; i++) {
+            await page.keyboard.press('ArrowDown');
+            await sleep(60);
           }
-          if (opt) {
-            try { opt.scrollIntoView({ block: 'center' }); } catch {}
-            opt.click();
-            return (opt.innerText || '').trim();
-          }
-          return null;
-        }).catch(() => null);
+          await page.keyboard.press('Enter');
+          yPicked = 'ArrowDown×26';
+        }
         log(jobId, `Ano: ${yPicked}`);
         await sleep(800);
       }
@@ -467,8 +481,10 @@ async function runJob(job) {
     '--disable-setuid-sandbox',
     '--disable-dev-shm-usage',
     '--disable-blink-features=AutomationControlled',
-    '--window-size=390,844',
+    '--window-size=1280,800',
     '--disable-gpu',
+    '--disable-quic',                  // evita ERR_QUIC_PROTOCOL_ERROR via proxy
+    '--disable-features=NetworkService', // mais compatível com proxies
   ];
   if (!noProxy) {
     args.push('--proxy-server=http://gw.dataimpulse.com:823');
