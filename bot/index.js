@@ -213,6 +213,53 @@ async function scanFolder(jobId, page, email, folderUrl, triedCodes = new Set())
   }
 }
 
+// Scan de OTP com página Outlook já aberta (sem re-login)
+async function scanForFreshOtp(jobId, emailPage, email, triedCodes) {
+  const folders = [
+    'https://outlook.live.com/mail/0/inbox',
+    'https://outlook.live.com/mail/0/other',
+    'https://outlook.live.com/mail/0/junkemail',
+    'https://outlook.live.com/mail/0/inbox',   // 2.ª passagem no inbox
+  ];
+
+  // ── Fase 1: Scan automático (120s) ──
+  const outlookDeadline = Date.now() + 120000;
+  let fi = 0;
+  while (Date.now() < outlookDeadline) {
+    if (jobs[jobId].pendingOtp) {
+      const code = jobs[jobId].pendingOtp;
+      jobs[jobId].pendingOtp = null;
+      log(jobId, `OTP recebido manualmente: ${code}`);
+      return code;
+    }
+
+    const code = await scanFolder(jobId, emailPage, email, folders[fi % folders.length], triedCodes);
+    fi++;
+    if (code) return code;
+
+    await sleep(5000);
+  }
+
+  // ── Fase 2: Fallback manual (5 min) ──
+  log(jobId, 'Outlook timeout — modo manual activado. Use PATCH /submit-code ou o painel.');
+  jobs[jobId].status = 'waiting_otp';
+
+  const manualDeadline = Date.now() + 300000;
+  while (Date.now() < manualDeadline) {
+    if (jobs[jobId].pendingOtp) {
+      const code = jobs[jobId].pendingOtp;
+      jobs[jobId].pendingOtp = null;
+      jobs[jobId].status = 'running';
+      log(jobId, `OTP manual recebido: ${code}`);
+      return code;
+    }
+    await sleep(2000);
+  }
+
+  throw new Error('Timeout a aguardar OTP (Outlook + manual)');
+}
+
+// Mantido para compatibilidade — usado internamente se não houver sessão prévia
 async function waitForEmailOtp(jobId, email, password, browser, proxyUser, proxyPass, triedCodes = new Set()) {
   log(jobId, '[outlook] Abrindo contexto incógnito...');
   const ctx = await browser.createIncognitoBrowserContext();
@@ -220,51 +267,9 @@ async function waitForEmailOtp(jobId, email, password, browser, proxyUser, proxy
 
   try {
     await loginOutlook(jobId, emailPage, email, password, proxyUser, proxyPass);
-
-    const folders = [
-      'https://outlook.live.com/mail/0/inbox',
-      'https://outlook.live.com/mail/0/other',
-      'https://outlook.live.com/mail/0/junkemail',
-      'https://outlook.live.com/mail/0/inbox',   // 2.ª passagem no inbox
-    ];
-
-    // ── Fase 1: Outlook automático (120s) ──
-    const outlookDeadline = Date.now() + 120000;
-    let fi = 0;
-    while (Date.now() < outlookDeadline) {
-      if (jobs[jobId].pendingOtp) {
-        const code = jobs[jobId].pendingOtp;
-        jobs[jobId].pendingOtp = null;
-        log(jobId, `OTP recebido manualmente: ${code}`);
-        return code;
-      }
-
-      const code = await scanFolder(jobId, emailPage, email, folders[fi % folders.length], triedCodes);
-      fi++;
-      if (code) return code;
-
-      await sleep(5000);
-    }
-
-    // ── Fase 2: Fallback manual (5 min) ──
-    log(jobId, 'Outlook timeout — modo manual activado. Use PATCH /submit-code ou o painel.');
-    jobs[jobId].status = 'waiting_otp';
-
-    const manualDeadline = Date.now() + 300000;
-    while (Date.now() < manualDeadline) {
-      if (jobs[jobId].pendingOtp) {
-        const code = jobs[jobId].pendingOtp;
-        jobs[jobId].pendingOtp = null;
-        jobs[jobId].status = 'running';
-        log(jobId, `OTP manual recebido: ${code}`);
-        return code;
-      }
-      await sleep(2000);
-    }
-
-    throw new Error('Timeout a aguardar OTP (Outlook + manual)');
+    return await scanForFreshOtp(jobId, emailPage, email, triedCodes);
   } finally {
-    await ctx.close().catch(() => {}); // liberta memória imediatamente
+    await ctx.close().catch(() => {});
   }
 }
 
@@ -366,6 +371,32 @@ async function runJob(job) {
   });
 
   try {
+    // ── Iniciar Outlook em paralelo com o Instagram ──────────────────────────────
+    // Enquanto o Instagram carrega, fazemos login no Outlook e pré-scaneamos todos
+    // os emails Instagram já existentes → triedCodes fica pré-populado com códigos
+    // antigos antes de precisarmos do OTP da sessão actual.
+    log(id, '[outlook-early] A iniciar login em paralelo...');
+    const outlookInitPromise = (async () => {
+      const ctx = await browser.createIncognitoBrowserContext();
+      const pg = await ctx.newPage();
+      const triedCodes = new Set();
+      try {
+        await loginOutlook(id, pg, email, emailPassword, proxyUser, proxyPass);
+        for (const folder of [
+          'https://outlook.live.com/mail/0/inbox',
+          'https://outlook.live.com/mail/0/other',
+          'https://outlook.live.com/mail/0/junkemail',
+        ]) {
+          await scanFolder(id, pg, email, folder, triedCodes);
+        }
+        log(id, `[outlook-early] Pre-scan completo. Códigos pré-existentes (${triedCodes.size}): ${[...triedCodes].join(', ') || 'nenhum'}`);
+      } catch (e) {
+        log(id, `[outlook-early] Erro no pre-scan (continuando): ${e.message}`);
+      }
+      return { ctx, page: pg, triedCodes };
+    })();
+    // Não await aqui — corre em paralelo com a navegação Instagram
+
     // ── Página do Instagram (contexto principal, mobile) ──
     const page = await browser.newPage();
     await page.setUserAgent(
@@ -433,46 +464,105 @@ async function runJob(job) {
 
     if (needsOtp) {
       log(id, 'Instagram pede verificação por email...');
-      const otpSel = 'input[name="confirmationCode"], input[name="verificationCode"], input[aria-label*="code" i], input[aria-label*="código" i], input[autocomplete="one-time-code"]';
-      const triedCodes = new Set();
+
+      // Diagnóstico: quais inputs estão na página OTP
+      const otpPageInputs = await page.evaluate(() =>
+        Array.from(document.querySelectorAll('input')).map(i =>
+          `type=${i.type}|name=${i.name}|id=${i.id}|maxLen=${i.maxLength}|ph=${i.placeholder}|autocomplete=${i.autocomplete}`
+        )
+      ).catch(() => []);
+      log(id, `Inputs na página OTP: ${otpPageInputs.join(' :: ')}`);
+
+      const otpSel = [
+        'input[name="confirmationCode"]',
+        'input[name="verificationCode"]',
+        'input[name="security_code"]',
+        'input[aria-label*="code" i]',
+        'input[aria-label*="código" i]',
+        'input[autocomplete="one-time-code"]',
+        'input[type="tel"][maxlength="6"]',
+        'input[type="number"][maxlength="6"]',
+        'input[type="text"][maxlength="6"]',
+      ].join(', ');
+
+      // Aguardar Outlook já iniciado em paralelo
+      log(id, '[outlook-early] Aguardando sessão Outlook (pré-scan)...');
+      const { ctx: outlookCtx, page: outlookPage, triedCodes } = await outlookInitPromise;
 
       for (let attempt = 0; attempt < 3; attempt++) {
-        const otp = await waitForEmailOtp(id, email, emailPassword, browser, proxyUser, proxyPass, triedCodes);
+        log(id, `[otp] Tentativa ${attempt + 1} — ${triedCodes.size} código(s) já tentado(s): ${[...triedCodes].join(',')}`);
+        const otp = await scanForFreshOtp(id, outlookPage, email, triedCodes);
 
         log(id, `Inserindo OTP (tentativa ${attempt + 1}): ${otp}`);
-        const typed = await typeInto(page, otpSel, otp);
+
+        // Tentar campo principal
+        let typed = await typeInto(page, otpSel, otp);
+        log(id, `typeInto resultado: ${typed}`);
 
         if (!typed) {
-          // Fallback: campo com maxLength=6 ou nome com "code"
+          // Fallback 1: 6 inputs individuais (um por dígito)
+          const digitInputs = await page.$$('input[maxlength="1"]');
+          if (digitInputs.length >= 6) {
+            log(id, `OTP via ${digitInputs.length} campos individuais`);
+            for (let di = 0; di < 6 && di < otp.length; di++) {
+              await digitInputs[di].click({ clickCount: 3 });
+              await digitInputs[di].type(otp[di], { delay: 80 });
+            }
+            typed = true;
+          }
+        }
+
+        if (!typed) {
+          // Fallback 2: qualquer input com name/id relacionado com código
           for (const inp of await page.$$('input[type="text"], input[type="tel"], input[type="number"], input:not([type="hidden"])')) {
-            const info = await inp.evaluate(el => ({ maxLen: el.maxLength, name: el.name }));
-            if (info.maxLen === 6 || /code|verification|confirm/i.test(info.name)) {
+            const info = await inp.evaluate(el => ({ maxLen: el.maxLength, name: el.name, id: el.id }));
+            if (info.maxLen === 6 || /code|verification|confirm/i.test(info.name + info.id)) {
               await inp.click({ clickCount: 3 });
               await inp.type(otp, { delay: 100 });
-              log(id, `OTP via fallback (name=${info.name})`);
+              log(id, `OTP via fallback2 (name=${info.name} id=${info.id})`);
+              typed = true;
               break;
             }
           }
         }
 
+        if (!typed) {
+          // Fallback 3: focus no primeiro input visível e keyboard.type
+          log(id, 'OTP via keyboard.type (fallback3)');
+          await page.evaluate(() => {
+            const inp = document.querySelector('input:not([type="hidden"]):not([type="submit"])');
+            if (inp) inp.focus();
+          });
+          await page.keyboard.type(otp, { delay: 100 });
+        }
+
         await sleep(500);
-        await clickButton(page, ['button[type="submit"]']);
-        await sleep(6000);
+        // Tentar tanto submit button como Enter
+        const submitted = await clickButton(page, ['button[type="submit"]', 'button']);
+        if (!submitted) await page.keyboard.press('Enter');
+        await sleep(7000);
 
         const postOtpUrl = page.url();
+        const postContent = await page.content();
         log(id, `URL após OTP tentativa ${attempt + 1}: ${postOtpUrl}`);
+
+        // Log parcial do conteúdo para diagnóstico
+        const snippet = postContent.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').slice(0, 300);
+        log(id, `Conteúdo pós-OTP (snippet): ${snippet}`);
 
         if (!/accounts\/signup|accounts\/emailsignup/i.test(postOtpUrl)) {
           break; // OTP aceite — avançar
         }
 
-        // Verificar se Instagram reportou erro explícito
-        const errContent = await page.content();
-        const rejected = /invalid|expired|incorrect|inv[aá]lid|expirou|expirad|incorreto/i.test(errContent);
-        log(id, `OTP ${otp} ${rejected ? 'rejeitado pelo Instagram' : 'URL não mudou — a tentar novo código'}...`);
+        const rejected = /invalid|expired|incorrect|inv[aá]lid|expirou|expirad|incorreto/i.test(postContent);
+        log(id, `OTP ${otp} ${rejected ? 'rejeitado pelo Instagram' : 'URL não mudou'}. Tentando novo código...`);
       }
 
       log(id, `URL final pós-OTP: ${page.url()}`);
+      await outlookCtx.close().catch(() => {});
+    } else {
+      // OTP não necessário — fechar Outlook iniciado em paralelo
+      outlookInitPromise.then(({ ctx }) => ctx && ctx.close().catch(() => {})).catch(() => {});
     }
 
     // ── Campos de perfil pós-OTP ──
