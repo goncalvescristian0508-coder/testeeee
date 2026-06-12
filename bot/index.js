@@ -777,6 +777,8 @@ async function runJob(job) {
         'input[type="tel"][maxlength="6"]',
         'input[type="number"][maxlength="6"]',
         'input[type="text"][maxlength="6"]',
+        // Instagram define maxlength via JS property, não atributo HTML — usar selector genérico
+        'input:not([type="hidden"]):not([type="submit"]):not([type="password"]):not([type="search"])',
       ].join(', ');
 
       // Aguardar Outlook já iniciado em paralelo
@@ -905,8 +907,9 @@ async function runJob(job) {
     const finalContent = await page.content();
     log(id, `Terminado. URL: ${finalUrl}`);
 
-    if (/your account has been (suspended|disabled)|conta.*suspensa|conta.*desativad/i.test(finalContent)) {
+    if (/accounts\/suspended/i.test(finalUrl) || /your account has been (suspended|disabled)|conta.*suspensa|conta.*desativad/i.test(finalContent)) {
       job.status = 'suspended';
+      log(id, 'Conta suspensa pelo Instagram (email provavelmente reutilizado demais)');
     } else if (/accounts\/signup|accounts\/emailsignup/i.test(finalUrl)) {
       job.status = 'error';
       job.error = 'Ainda na página de signup — criação pode ter falhado';
