@@ -339,24 +339,92 @@ function deriveName(email) {
 
 async function handleBirthday(jobId, page) {
   try {
-    // Tentar todos os selectores conhecidos para os dropdowns de aniversário
-    const monthSel = 'select[title="Month:"], select[aria-label*="Month" i], select[aria-label*="Mês" i], select[aria-label*="month" i]';
-    const monthEl = await page.$(monthSel).catch(() => null);
-    if (!monthEl) return false;
+    // Instagram desktop: birthday usa DIV[role="combobox"] — não é <select> nativo
+    const monthCombo = await page.$(
+      'div[role="combobox"][aria-label*="Month" i], div[role="combobox"][aria-label*="Mês" i]'
+    ).catch(() => null);
 
-    log(jobId, 'Preenchendo data de nascimento...');
-    await page.select(monthSel.split(',')[0].trim(), '').catch(() => {}); // reset first
-    // Selectores individuais para cada dropdown
-    const monthOpts = ['select[title="Month:"]', 'select[aria-label*="Month" i]', 'select[aria-label*="Mês" i]'];
-    const dayOpts   = ['select[title="Day:"]',   'select[aria-label*="Day" i]',   'select[aria-label*="Dia" i]'];
-    const yearOpts  = ['select[title="Year:"]',  'select[aria-label*="Year" i]',  'select[aria-label*="Ano" i]'];
+    if (monthCombo) {
+      log(jobId, 'Aniversário via combobox (desktop)...');
 
-    for (const s of monthOpts) { try { await page.select(s, '6'); break; } catch {} }
-    for (const s of dayOpts)   { try { await page.select(s, '15'); break; } catch {} }
-    for (const s of yearOpts)  { try { await page.select(s, '1995'); break; } catch {} }
+      // Helper: click combobox → wait → click matching option
+      const pickOption = async (combo, matchText, fallbackIdx) => {
+        await combo.click();
+        await sleep(1200);
+        const picked = await page.evaluate((text, idx) => {
+          // Tentar scrollIntoView para tornar o item visível se for lista virtual
+          const opts = [...document.querySelectorAll('[role="option"]')];
+          let opt = opts.find(o => {
+            const t = (o.innerText || '').trim();
+            return t === text || new RegExp('^' + text + '$', 'i').test(t);
+          });
+          if (!opt && idx >= 0 && opts[idx]) opt = opts[idx];
+          if (opt) {
+            try { opt.scrollIntoView({ block: 'center' }); } catch {}
+            opt.click();
+            return (opt.innerText || '').trim().slice(0, 10);
+          }
+          return null;
+        }, matchText, fallbackIdx).catch(() => null);
+        await sleep(800);
+        return picked;
+      };
+
+      const mPicked = await pickOption(monthCombo, 'June', 5);
+      log(jobId, `Mês: ${mPicked}`);
+
+      const dayCombo = await page.$(
+        'div[role="combobox"][aria-label*="Day" i], div[role="combobox"][aria-label*="Dia" i]'
+      ).catch(() => null);
+      if (dayCombo) {
+        const dPicked = await pickOption(dayCombo, '15', 14);
+        log(jobId, `Dia: ${dPicked}`);
+      }
+
+      const yearCombo = await page.$(
+        'div[role="combobox"][aria-label*="Year" i], div[role="combobox"][aria-label*="Ano" i]'
+      ).catch(() => null);
+      if (yearCombo) {
+        // Scroll dentro do listbox se o ano não estiver visível (lista longa)
+        await yearCombo.click();
+        await sleep(1200);
+        const yPicked = await page.evaluate(() => {
+          const opts = [...document.querySelectorAll('[role="option"]')];
+          let opt = opts.find(o => (o.innerText || '').trim() === '1995');
+          if (!opt) {
+            // Scroll the listbox to find 1995
+            const lb = document.querySelector('[role="listbox"]');
+            if (lb) {
+              lb.scrollTop = lb.scrollHeight;
+              opt = [...document.querySelectorAll('[role="option"]')].find(o => (o.innerText || '').trim() === '1995');
+            }
+          }
+          if (opt) {
+            try { opt.scrollIntoView({ block: 'center' }); } catch {}
+            opt.click();
+            return (opt.innerText || '').trim();
+          }
+          return null;
+        }).catch(() => null);
+        log(jobId, `Ano: ${yPicked}`);
+        await sleep(800);
+      }
+      return true;
+    }
+
+    // Fallback: <select> nativo (mobile ou versão antiga)
+    const monthSel = await page.$('select[title="Month:"], select[aria-label*="Month" i]').catch(() => null);
+    if (!monthSel) return false;
+    log(jobId, 'Aniversário via select nativo');
+    for (const s of ['select[title="Month:"]', 'select[aria-label*="Month" i]']) { try { await page.select(s, '6'); break; } catch {} }
+    for (const s of ['select[title="Day:"]',   'select[aria-label*="Day" i]'])   { try { await page.select(s, '15'); break; } catch {} }
+    for (const s of ['select[title="Year:"]',  'select[aria-label*="Year" i]'])  { try { await page.select(s, '1995'); break; } catch {} }
     await sleep(600);
     return true;
-  } catch (e) { return false; }
+  } catch (e) {
+    log(jobId, `handleBirthday erro: ${e.message}`);
+    return false;
+  }
 }
 
 async function fillProfileFields(jobId, page, email, emailPassword) {
