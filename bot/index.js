@@ -578,6 +578,23 @@ async function runJob(job) {
     ).catch(() => []);
     log(id, `Selects (${selectDump.length}): ${selectDump.join(' || ')}`);
 
+    // Diagnóstico de birthday: comboboxes, listboxes, e HTML do elemento "Month"
+    const bdayDiag = await page.evaluate(() => {
+      const combos = [...document.querySelectorAll('[role="combobox"],[role="listbox"],[role="spinbutton"]')]
+        .map(e => `${e.tagName}[role=${e.getAttribute('role')}|aria=${e.getAttribute('aria-label')}]`);
+      // Encontrar elemento folha com texto "Month" ou "Mês"
+      const all = [...document.querySelectorAll('*')];
+      const monthEl = all.find(e => {
+        const t = (e.innerText || '').trim();
+        return (t === 'Month' || t === 'Mês') && e.children.length === 0;
+      });
+      const monthInfo = monthEl
+        ? `${monthEl.tagName}[role=${monthEl.getAttribute('role')}|aria=${monthEl.getAttribute('aria-label')}] parent=${monthEl.parentElement?.tagName}[role=${monthEl.parentElement?.getAttribute('role')}] grandp=${monthEl.parentElement?.parentElement?.tagName}[role=${monthEl.parentElement?.parentElement?.getAttribute('role')}]`
+        : 'month-not-found';
+      return { combos, monthInfo };
+    }).catch(() => ({ combos: [], monthInfo: 'error' }));
+    log(id, `Birthday diag: combos=[${bdayDiag.combos.join(',')}] month=${bdayDiag.monthInfo}`);
+
     // Ler valores actuais dos campos (confirmar que React manteve os valores)
     const fieldValues = await page.evaluate(() => {
       return Array.from(document.querySelectorAll('input:not([type="hidden"])'))
