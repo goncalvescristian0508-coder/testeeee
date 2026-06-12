@@ -340,43 +340,69 @@ async function runJob(job) {
       }
     } catch {}
 
-    // ── Step 1: Fill email field ──
-    log(id, 'Looking for email field...');
-    const emailFieldSelector = await page.evaluate(() => {
-      const candidates = [
-        'input[name="emailOrPhone"]',
-        'input[type="email"]',
-        'input[name="email"]',
-        'input[aria-label*="email" i]',
-        'input[placeholder*="email" i]',
-        'input[placeholder*="Phone" i]',
-        'input[placeholder*="celular" i]',
-        'input[placeholder*="e-mail" i]',
-      ];
-      for (const sel of candidates) {
-        if (document.querySelector(sel)) return sel;
-      }
-      return null;
-    });
+    // ── Step 1: Ensure we're on the EMAIL signup form ──
+    // Instagram may redirect to /signup/phone/ — click "Sign up with email" if so
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const currentUrl = page.url();
+      if (!currentUrl.includes('/signup/phone') && !currentUrl.includes('accounts/signup/')) break;
 
-    log(id, `Email field: ${emailFieldSelector}`);
+      log(id, `On phone page (attempt ${attempt + 1}), looking for email signup link...`);
+      const switched = await page.evaluate(() => {
+        for (const el of document.querySelectorAll('a, button')) {
+          if (/sign up with email|use email/i.test(el.textContent)) {
+            el.click();
+            return el.textContent.trim();
+          }
+        }
+        const emailLink = document.querySelector('a[href*="emailsignup"], a[href*="email"]');
+        if (emailLink) { emailLink.click(); return emailLink.href; }
+        return null;
+      }).catch(() => null);
 
-    if (emailFieldSelector) {
-      await typeInto(page, emailFieldSelector, email);
-    } else {
-      await sleep(3000);
-      const firstInput = await page.$('input:not([type="hidden"])');
-      if (firstInput) {
-        await firstInput.click({ clickCount: 3 });
-        await firstInput.type(email, { delay: 70 });
+      if (switched) {
+        log(id, `Clicked: "${switched}"`);
       } else {
-        throw new Error('Could not find email input on Instagram signup page');
+        log(id, 'No email link found — navigating directly to emailsignup');
+        await page.goto('https://www.instagram.com/accounts/emailsignup/', {
+          waitUntil: 'networkidle2', timeout: 30000,
+        }).catch(() => {});
       }
+      await sleep(3000);
     }
 
+    log(id, `After phone→email switch: ${page.url()}`);
+
+    // ── Step 2: Find and fill email input (wait up to 10s) ──
+    log(id, 'Waiting for email field...');
+    const EMAIL_SELS = [
+      'input[name="emailOrPhone"]',
+      'input[type="email"]',
+      'input[name="email"]',
+      'input[aria-label*="email" i]',
+      'input[placeholder*="email" i]',
+      'input[placeholder*="e-mail" i]',
+    ];
+    let emailEl = null;
+    for (const sel of EMAIL_SELS) {
+      try { emailEl = await page.waitForSelector(sel, { timeout: 3000 }); } catch {}
+      if (emailEl) { log(id, `Email field: ${sel}`); break; }
+    }
+
+    if (!emailEl) {
+      const inputsInfo = await page.evaluate(() =>
+        Array.from(document.querySelectorAll('input')).map(i =>
+          `type=${i.type} name=${i.name} placeholder=${i.placeholder}`
+        )
+      ).catch(() => []);
+      log(id, `Email field not found. Inputs on page: ${inputsInfo.join(' | ')}`);
+      throw new Error('Could not find email input on Instagram signup page');
+    }
+
+    await emailEl.click({ clickCount: 3 });
+    await emailEl.type(email, { delay: 70 });
     await sleep(500);
 
-    // Fill profile fields if shown upfront (classic flow)
+    // Fill name/username/password if visible (classic all-in-one form)
     await typeInto(page, 'input[name="fullName"], input[placeholder*="Full name" i], input[aria-label*="Full name" i]', deriveName(email));
     await sleep(400);
     await typeInto(page, 'input[name="username"], input[placeholder*="username" i], input[aria-label*="username" i]', deriveUsername(email));
@@ -384,29 +410,16 @@ async function runJob(job) {
     await typeInto(page, 'input[name="password"], input[type="password"]', emailPassword);
     await sleep(600);
 
-    log(id, 'Submitting initial form...');
+    log(id, 'Submitting signup form...');
     await clickButton(page, 'button[type="submit"]');
     await sleep(4000);
 
-    // ── Step 2: Birthday ──
+    // ── Step 3: Birthday ──
     await handleBirthday(id, page);
 
-    // ── Step 3: Phone → switch to email ──
-    const content = await page.content();
-    if (/type="tel"|name="phoneNumber"|phone number|número de telefone/i.test(content)) {
-      log(id, 'Phone asked — trying to switch to email verification...');
-      try {
-        const links = await page.$$('a, button');
-        for (const link of links) {
-          const t = await link.evaluate((el) => el.textContent);
-          if (/email|e-mail/i.test(t)) { await link.click(); await sleep(2000); break; }
-        }
-      } catch {}
-    }
-
     // ── Step 4: Email OTP ──
-    const content2 = await page.content();
-    const needsOtp = /confirmationCode|verificationCode|enter.*code|código|verification code/i.test(content2);
+    const otpContent = await page.content();
+    const needsOtp = /confirmationCode|verificationCode|enter.*code|código|verification code/i.test(otpContent);
 
     if (needsOtp) {
       log(id, 'Instagram requires email OTP...');
@@ -414,13 +427,9 @@ async function runJob(job) {
       emailBrowserClosed = true;
 
       log(id, `Entering OTP: ${otp}`);
-      const otpTyped = await typeInto(
-        page,
-        'input[name="confirmationCode"], input[name="verificationCode"], input[aria-label*="code" i], input[aria-label*="código" i], input[autocomplete="one-time-code"]',
-        otp
-      );
+      const otpSelectors = 'input[name="confirmationCode"], input[name="verificationCode"], input[aria-label*="code" i], input[aria-label*="código" i], input[autocomplete="one-time-code"]';
+      const otpTyped = await typeInto(page, otpSelectors, otp);
 
-      // Fallback: try any input with maxLength=6
       if (!otpTyped) {
         const inputs = await page.$$('input');
         for (const inp of inputs) {
@@ -440,24 +449,28 @@ async function runJob(job) {
       log(id, `Post-OTP URL: ${page.url()}`);
     }
 
-    // ── Step 5: Profile fields that may appear AFTER OTP ──
-    // Instagram sometimes shows name/username/password after email confirmation
+    // ── Step 5: Profile fields after OTP (some flows show them here) ──
     for (let i = 0; i < 3; i++) {
       const filled = await fillProfileFields(id, page, email, emailPassword);
       if (!filled) break;
-      log(id, `Post-OTP profile fill round ${i + 1} done. URL: ${page.url()}`);
+      log(id, `Post-OTP profile fill ${i + 1} done. URL: ${page.url()}`);
       await handleBirthday(id, page);
     }
 
-    // ── Step 6: Terms / extra screens ──
+    // ── Step 6: Terms / extra screens (only if NOT on signup pages) ──
     for (let i = 0; i < 5; i++) {
-      const c = await page.content();
-      log(id, `Extra step ${i + 1}: URL=${page.url()}`);
-      if (/terms|termos|agree|concordo/i.test(c)) {
+      const stepUrl = page.url();
+      const stepContent = await page.content();
+      log(id, `Extra step ${i + 1}: URL=${stepUrl}`);
+
+      // Don't loop on signup pages — we can't progress from there
+      if (/accounts\/signup|accounts\/emailsignup/i.test(stepUrl)) break;
+
+      if (/\bterms\b|\btermos\b|\bagree\b|\bconcordo\b/i.test(stepContent)) {
         log(id, 'Accepting terms...');
         await clickButton(page, ['button[type="submit"]', 'button[type="button"]']);
         await sleep(2500);
-      } else if (/birthday|aniversário|birth date/i.test(c)) {
+      } else if (/birthday|aniversário|birth date/i.test(stepContent)) {
         await handleBirthday(id, page);
       } else {
         break;
@@ -469,9 +482,10 @@ async function runJob(job) {
     const finalContent = await page.content();
     log(id, `Finished. URL: ${finalUrl}`);
 
-    if (/suspended|disabled|violated|desativad/i.test(finalContent)) {
+    // Check for actual account suspension (not just HTML "disabled" attribute)
+    if (/your account has been (suspended|disabled)|conta.*suspensa|conta.*desativad/i.test(finalContent)) {
       job.status = 'suspended';
-    } else if (/signup|emailsignup|error/i.test(finalUrl)) {
+    } else if (/accounts\/signup|accounts\/emailsignup/i.test(finalUrl)) {
       job.status = 'error';
       job.error = 'Still on signup page — creation may have failed';
     } else {
