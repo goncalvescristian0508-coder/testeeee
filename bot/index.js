@@ -18,13 +18,6 @@ const DEFAULT_PROXY_PASS = process.env.PROXY_PASS || '';
 /** @type {Record<string, object>} */
 const jobs = {};
 
-function authMiddleware(req, res, next) {
-  if (req.headers['x-bot-secret'] !== BOT_SECRET) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
-  next();
-}
-
 function log(jobId, msg) {
   const line = `${new Date().toISOString()} ${msg}`;
   console.log(`[${jobId.slice(0, 8)}] ${msg}`);
@@ -38,40 +31,34 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function loginOutlook(page, email, password) {
   log('outlook', `Logging in as ${email}...`);
 
-  // Go directly to Microsoft login
   await page.goto(
     `https://login.live.com/login.srf?wa=wsignin1.0&rpsnv=13&ct=1&rver=7.0.6737.0&wp=MBI_SSL&wreply=https%3A%2F%2Foutlook.live.com%2Fowa%2F&id=292841`,
     { waitUntil: 'networkidle2', timeout: 60000 }
   );
   await sleep(2000);
 
-  // If already at inbox, we're done
   if (page.url().includes('outlook.live.com/mail') || page.url().includes('outlook.live.com/owa')) {
     log('outlook', 'Already logged in.');
     return;
   }
 
-  // Fill email
   const emailInput = await page.waitForSelector('input[type="email"], input[name="loginfmt"]', { timeout: 20000 });
   await emailInput.click({ clickCount: 3 });
   await emailInput.type(email, { delay: 70 });
   await page.keyboard.press('Enter');
   await sleep(2500);
 
-  // Fill password
   const passInput = await page.waitForSelector('input[type="password"], input[name="passwd"]', { timeout: 15000 });
   await passInput.click({ clickCount: 3 });
   await passInput.type(password, { delay: 70 });
   await page.keyboard.press('Enter');
   await sleep(4000);
 
-  // "Stay signed in?" — click No
   try {
     const noBtn = await page.$('#idBtn_Back');
     if (noBtn) { await noBtn.click(); await sleep(2000); }
   } catch {}
 
-  // Wait for inbox to load
   await page.waitForFunction(
     () => window.location.href.includes('outlook.live.com'),
     { timeout: 20000 }
@@ -80,50 +67,71 @@ async function loginOutlook(page, email, password) {
   log('outlook', `Outlook ready. URL: ${page.url()}`);
 }
 
-async function scanOutlookForCode(page) {
-  // Check Inbox, Other, Junk for a 6-digit Instagram code
+async function scanOutlookForCode(jobId, page) {
+  log(jobId, 'scanOutlook: starting...');
+
   const folderSelectors = [
     '[aria-label="Inbox, Primary"], [title="Inbox"], [aria-label="Inbox"]',
     '[aria-label="Other"], [title="Other"]',
-    '[aria-label="Junk Email"], [title="Junk Email"]',
+    '[aria-label="Junk Email"], [title="Junk Email"], [aria-label="Spam"]',
   ];
 
   for (const folderSel of folderSelectors) {
+    log(jobId, `scanOutlook: trying folder "${folderSel}"...`);
     try {
       const folderBtn = await page.$(folderSel);
-      if (folderBtn) {
-        await folderBtn.click();
-        await sleep(1500);
+      if (!folderBtn) {
+        log(jobId, 'scanOutlook: folder button not found, skipping');
+        continue;
       }
-    } catch {}
+      await folderBtn.click();
+      await sleep(1500);
+    } catch (e) {
+      log(jobId, `scanOutlook: folder click error: ${e.message}`);
+    }
 
     const rows = await page.$$('[role="option"], [data-convid], [data-itemid]');
+    log(jobId, `scanOutlook: found ${rows.length} email rows`);
+
     for (const row of rows) {
       const text = await row.evaluate((el) => el.textContent).catch(() => '');
       if (/instagram/i.test(text)) {
+        log(jobId, 'scanOutlook: found Instagram email, opening...');
         await row.click();
         await sleep(2000);
 
         const bodyText = await page.evaluate(() => document.body.innerText);
         const m = bodyText.match(/\b(\d{6})\b/);
-        if (m) return m[1];
+        if (m) {
+          log(jobId, `scanOutlook: OTP found: ${m[1]}`);
+          return m[1];
+        }
+        log(jobId, 'scanOutlook: no 6-digit code in email body');
       }
     }
   }
+
+  log(jobId, 'scanOutlook: no OTP found in any folder');
   return null;
 }
 
-async function waitForEmailOtp(jobId, emailPage, maxWait = 180000) {
-  log(jobId, 'Waiting for Instagram verification email in Outlook...');
+async function waitForEmailOtp(jobId, emailPage, emailBrowser, maxWait = 180000) {
+  log(jobId, 'Waiting for OTP in Outlook...');
   const deadline = Date.now() + maxWait;
+  let attempt = 0;
 
   while (Date.now() < deadline) {
+    attempt++;
     await sleep(7000);
+    log(jobId, `OTP scan attempt #${attempt}...`);
     try {
-      await emailPage.reload({ waitUntil: 'networkidle2', timeout: 30000 });
-      const code = await scanOutlookForCode(emailPage);
+      // Use domcontentloaded — faster than networkidle2 and avoids hanging
+      await emailPage.reload({ waitUntil: 'domcontentloaded', timeout: 25000 });
+      await sleep(2000);
+      const code = await scanOutlookForCode(jobId, emailPage);
       if (code) {
-        log(jobId, `Email OTP found: ${code}`);
+        log(jobId, `OTP found: ${code} — closing email browser`);
+        await emailBrowser.close().catch(() => {});
         return code;
       }
       log(jobId, 'OTP not found yet, retrying...');
@@ -131,6 +139,8 @@ async function waitForEmailOtp(jobId, emailPage, maxWait = 180000) {
       log(jobId, `Outlook scan error: ${e.message}`);
     }
   }
+
+  await emailBrowser.close().catch(() => {});
   throw new Error('Timeout waiting for email OTP');
 }
 
@@ -162,6 +172,53 @@ function deriveName(email) {
   return raw || 'User';
 }
 
+async function handleBirthday(jobId, page) {
+  try {
+    await page.waitForSelector('select[title="Month:"]', { timeout: 6000 });
+    log(jobId, 'Filling birthday...');
+    await page.select('select[title="Month:"]', '6');
+    await page.select('select[title="Day:"]', '15');
+    await page.select('select[title="Year:"]', '1995');
+    await sleep(600);
+    await clickButton(page, ['button[type="submit"]', 'button[type="button"]']);
+    await sleep(3000);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Fill name/username/password if Instagram shows those fields (happens after OTP on some flows)
+async function fillProfileFields(jobId, page, email, emailPassword) {
+  const hasName = await typeInto(
+    page,
+    'input[name="fullName"], input[aria-label*="Full name" i], input[placeholder*="Full name" i], input[placeholder*="nome" i]',
+    deriveName(email)
+  );
+  if (hasName) log(jobId, 'fillProfile: filled name');
+  await sleep(300);
+
+  const hasUser = await typeInto(
+    page,
+    'input[name="username"], input[aria-label*="username" i], input[placeholder*="username" i], input[placeholder*="usuário" i]',
+    deriveUsername(email)
+  );
+  if (hasUser) log(jobId, 'fillProfile: filled username');
+  await sleep(300);
+
+  const hasPass = await typeInto(page, 'input[name="password"], input[type="password"]', emailPassword);
+  if (hasPass) log(jobId, 'fillProfile: filled password');
+  await sleep(300);
+
+  if (hasName || hasUser || hasPass) {
+    log(jobId, 'fillProfile: submitting...');
+    await clickButton(page, 'button[type="submit"]');
+    await sleep(3500);
+    return true;
+  }
+  return false;
+}
+
 // ── Main bot flow ──────────────────────────────────────────────────────────────
 
 async function runJob(job) {
@@ -173,8 +230,18 @@ async function runJob(job) {
     '--disable-dev-shm-usage',
     '--disable-blink-features=AutomationControlled',
     '--window-size=390,844',
+    '--disable-gpu',
+    '--js-flags=--max-old-space-size=256',
   ];
   if (!noProxy) args.push('--proxy-server=http://gw.dataimpulse.com:823');
+
+  const emailArgs = [
+    '--no-sandbox',
+    '--disable-setuid-sandbox',
+    '--disable-dev-shm-usage',
+    '--disable-gpu',
+    '--js-flags=--max-old-space-size=256',
+  ];
 
   const browser = await puppeteerExtra.launch({
     headless: true,
@@ -183,19 +250,16 @@ async function runJob(job) {
     defaultViewport: { width: 390, height: 844, isMobile: true, hasTouch: true },
   });
 
-  // Open Outlook in a separate browser (no proxy — direct access to read email)
   const emailBrowser = await puppeteerExtra.launch({
     headless: true,
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-    ],
+    args: emailArgs,
     executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
   });
 
+  let emailBrowserClosed = false;
+
   try {
-    // ── Login to Outlook first (in background) ──
+    // ── Login to Outlook ──
     log(id, 'Opening Outlook...');
     const emailPage = await emailBrowser.newPage();
     await emailPage.setUserAgent(
@@ -218,9 +282,7 @@ async function runJob(job) {
     });
     await sleep(3000);
 
-    const pageTitle = await page.title();
-    const pageUrl = page.url();
-    log(id, `Page loaded: "${pageTitle}" | URL: ${pageUrl}`);
+    log(id, `Page loaded: "${await page.title()}" | URL: ${page.url()}`);
 
     // Accept cookies if shown
     try {
@@ -231,19 +293,15 @@ async function runJob(job) {
       }
     } catch {}
 
-    // ── Step 1: Find email input with multiple possible selectors ──
-    log(id, 'Looking for signup form...');
-
-    // Try to find any text/email input on the page
+    // ── Step 1: Fill email field ──
+    log(id, 'Looking for email field...');
     const emailFieldSelector = await page.evaluate(() => {
       const candidates = [
         'input[name="emailOrPhone"]',
         'input[type="email"]',
         'input[name="email"]',
         'input[aria-label*="email" i]',
-        'input[aria-label*="Email" i]',
         'input[placeholder*="email" i]',
-        'input[placeholder*="Email" i]',
         'input[placeholder*="Phone" i]',
         'input[placeholder*="celular" i]',
         'input[placeholder*="e-mail" i]',
@@ -251,17 +309,14 @@ async function runJob(job) {
       for (const sel of candidates) {
         if (document.querySelector(sel)) return sel;
       }
-      // Fallback: first visible input
-      const inputs = Array.from(document.querySelectorAll('input:not([type="hidden"])'));
-      return inputs.length ? null : null;
+      return null;
     });
 
-    log(id, `Email field selector found: ${emailFieldSelector}`);
+    log(id, `Email field: ${emailFieldSelector}`);
 
     if (emailFieldSelector) {
       await typeInto(page, emailFieldSelector, email);
     } else {
-      // Try waiting a bit more and use first input
       await sleep(3000);
       const firstInput = await page.$('input:not([type="hidden"])');
       if (firstInput) {
@@ -273,40 +328,27 @@ async function runJob(job) {
     }
 
     await sleep(500);
-    await typeInto(page, 'input[name="fullName"], input[aria-label*="name" i], input[placeholder*="name" i]', deriveName(email));
+
+    // Fill profile fields if shown upfront (classic flow)
+    await typeInto(page, 'input[name="fullName"], input[placeholder*="Full name" i], input[aria-label*="Full name" i]', deriveName(email));
     await sleep(400);
-    await typeInto(page, 'input[name="username"], input[aria-label*="username" i], input[placeholder*="username" i]', deriveUsername(email));
+    await typeInto(page, 'input[name="username"], input[placeholder*="username" i], input[aria-label*="username" i]', deriveUsername(email));
     await sleep(400);
     await typeInto(page, 'input[name="password"], input[type="password"]', emailPassword);
     await sleep(600);
 
-    log(id, 'Submitting form...');
+    log(id, 'Submitting initial form...');
     await clickButton(page, 'button[type="submit"]');
     await sleep(4000);
 
     // ── Step 2: Birthday ──
-    try {
-      await page.waitForSelector('select[title="Month:"]', { timeout: 8000 });
-      log(id, 'Filling birthday...');
-      await page.select('select[title="Month:"]', '6');
-      await page.select('select[title="Day:"]', '15');
-      await page.select('select[title="Year:"]', '1995');
-      await sleep(600);
-      await clickButton(page, ['button[type="submit"]', 'button[type="button"]']);
-      await sleep(3500);
-    } catch {
-      log(id, 'Birthday step not shown.');
-    }
+    await handleBirthday(id, page);
 
-    // ── Step 3: Check what verification Instagram requires ──
+    // ── Step 3: Phone → switch to email ──
     const content = await page.content();
-
-    // If Instagram switched to phone number form
-    if (/type="tel"|name="phoneNumber"|phone number|número de telefone|add.*phone/i.test(content)) {
-      // Try to skip / use email instead
-      log(id, 'Instagram asked for phone — trying to switch to email verification...');
+    if (/type="tel"|name="phoneNumber"|phone number|número de telefone/i.test(content)) {
+      log(id, 'Phone asked — trying to switch to email verification...');
       try {
-        const switchLink = await page.$('a[href*="email"], button');
         const links = await page.$$('a, button');
         for (const link of links) {
           const t = await link.evaluate((el) => el.textContent);
@@ -320,27 +362,56 @@ async function runJob(job) {
     const needsOtp = /confirmationCode|verificationCode|enter.*code|código|verification code/i.test(content2);
 
     if (needsOtp) {
-      log(id, 'Instagram requires email verification code...');
-      const otp = await waitForEmailOtp(id, emailPage);
+      log(id, 'Instagram requires email OTP...');
+      const otp = await waitForEmailOtp(id, emailPage, emailBrowser);
+      emailBrowserClosed = true;
 
       log(id, `Entering OTP: ${otp}`);
-      await typeInto(
+      const otpTyped = await typeInto(
         page,
-        'input[name="confirmationCode"], input[name="verificationCode"], input[aria-label*="code"], input[aria-label*="código"]',
+        'input[name="confirmationCode"], input[name="verificationCode"], input[aria-label*="code" i], input[aria-label*="código" i], input[autocomplete="one-time-code"]',
         otp
       );
+
+      // Fallback: try any input with maxLength=6
+      if (!otpTyped) {
+        const inputs = await page.$$('input');
+        for (const inp of inputs) {
+          const maxLen = await inp.evaluate((el) => el.maxLength);
+          if (maxLen === 6) {
+            await inp.click({ clickCount: 3 });
+            await inp.type(otp, { delay: 100 });
+            log(id, 'OTP entered via maxLength=6 fallback');
+            break;
+          }
+        }
+      }
+
       await sleep(500);
       await clickButton(page, ['button[type="submit"]']);
       await sleep(4000);
+      log(id, `Post-OTP URL: ${page.url()}`);
     }
 
-    // ── Step 5: Terms / extra steps ──
+    // ── Step 5: Profile fields that may appear AFTER OTP ──
+    // Instagram sometimes shows name/username/password after email confirmation
     for (let i = 0; i < 3; i++) {
+      const filled = await fillProfileFields(id, page, email, emailPassword);
+      if (!filled) break;
+      log(id, `Post-OTP profile fill round ${i + 1} done. URL: ${page.url()}`);
+      await handleBirthday(id, page);
+    }
+
+    // ── Step 6: Terms / extra screens ──
+    for (let i = 0; i < 5; i++) {
       const c = await page.content();
+      log(id, `Extra step ${i + 1}: URL=${page.url()}`);
       if (/terms|termos|agree|concordo/i.test(c)) {
         log(id, 'Accepting terms...');
         await clickButton(page, ['button[type="submit"]', 'button[type="button"]']);
         await sleep(2500);
+      } else if (/birthday|aniversário|birth date/i.test(c)) {
+        await handleBirthday(id, page);
       } else {
         break;
       }
@@ -368,7 +439,7 @@ async function runJob(job) {
     job.error = err.message;
   } finally {
     await browser.close().catch(() => {});
-    await emailBrowser.close().catch(() => {});
+    if (!emailBrowserClosed) await emailBrowser.close().catch(() => {});
   }
 }
 
@@ -417,6 +488,13 @@ app.get('/jobs', authMiddleware, (req, res) => {
 });
 
 app.get('/health', (_req, res) => res.json({ ok: true, activeJobs: Object.keys(jobs).length }));
+
+function authMiddleware(req, res, next) {
+  if (req.headers['x-bot-secret'] !== BOT_SECRET) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  next();
+}
 
 const PORT = Number(process.env.PORT) || 3001;
 app.listen(PORT, '0.0.0.0', () => console.log(`Bot listening on :${PORT}`));
