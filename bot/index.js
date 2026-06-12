@@ -385,40 +385,35 @@ async function handleBirthday(jobId, page) {
         'div[role="combobox"][aria-label*="Year" i], div[role="combobox"][aria-label*="Ano" i]'
       ).catch(() => null);
       if (yearCombo) {
-        await yearCombo.click();
+        // evaluate click nativo — evita hang do Puppeteer em mudanças de estado React
+        await yearCombo.evaluate(el => el.click());
         await sleep(2500); // year list can take time to fully render
 
-        // Tentar encontrar o ano em múltiplas passagens com scroll
         let yPicked = null;
-        const TARGET_YEAR = '2000'; // 26 anos — mais próximo do topo da lista
-        for (let scrollPass = 0; scrollPass < 6 && !yPicked; scrollPass++) {
+        const TARGET_YEAR = '2000'; // 26 anos
+        for (let pass = 0; pass < 8 && !yPicked; pass++) {
           yPicked = await page.evaluate((yr, pass) => {
             const opts = [...document.querySelectorAll('[role="option"]')];
-            let opt = opts.find(o => (o.innerText || '').trim() === yr);
-            if (opt) {
-              try { opt.scrollIntoView({ block: 'center' }); } catch {}
-              opt.click();
-              return (opt.innerText || '').trim();
+            const target = opts.find(el => el.textContent.trim() === yr);
+            if (target) {
+              target.scrollIntoView({ block: 'nearest' }); // scrollIntoView antes de clicar
+              target.click();
+              return target.textContent.trim();
             }
-            // Scroll incremental para carregar mais opções (lista virtual)
             const lb = document.querySelector('[role="listbox"]');
-            if (lb) lb.scrollTop += 300 * (pass + 1);
+            if (lb) lb.scrollTop += 350 * (pass + 1);
             return null;
-          }, TARGET_YEAR, scrollPass).catch(() => null);
-          if (!yPicked) await sleep(500);
+          }, TARGET_YEAR, pass).catch(() => null);
+          if (!yPicked) await sleep(400);
         }
 
-        // Fallback: teclas de seta (navegação por teclado)
+        // Fallback: teclado
         if (!yPicked) {
-          log(jobId, `Ano não encontrado em DOM — usando ArrowDown`);
-          await yearCombo.focus().catch(() => {});
-          // 2026 → 2000 = 26 presses (lista mais recente primeiro)
-          for (let i = 0; i < 26; i++) {
-            await page.keyboard.press('ArrowDown');
-            await sleep(60);
-          }
+          log(jobId, 'Ano: usando ArrowDown fallback');
+          await yearCombo.evaluate(el => el.focus()).catch(() => {});
+          for (let i = 0; i < 26; i++) { await page.keyboard.press('ArrowDown'); await sleep(50); }
           await page.keyboard.press('Enter');
-          yPicked = 'ArrowDown×26';
+          yPicked = 'ArrowDown*26';
         }
         log(jobId, `Ano: ${yPicked}`);
         await sleep(800);
@@ -594,17 +589,9 @@ async function runJob(job) {
       }
     }
 
-    // Dump detalhado de todos os inputs para diagnóstico de locale
-    const inputDump = await page.evaluate(() =>
-      Array.from(document.querySelectorAll('input:not([type="hidden"])'))
-        .map(i => `${i.type}[name=${i.name}|ph=${i.placeholder}|aria=${i.getAttribute('aria-label')}|ml=${i.maxLength}]`)
-    ).catch(() => []);
-    log(id, `Inputs encontrados: ${inputDump.join(' || ')}`);
-
     // Preencher campos por POSIÇÃO (Instagram ofusca os nomes — labels variam por locale)
     // Ordem típica no DOM: email, nome completo, username, password
     const allTextInputs = await page.$$('input[type="text"], input[type="tel"]');
-    log(id, `Total text/tel inputs: ${allTextInputs.length}`);
 
     // index 0 = email (já vamos preencher abaixo via emailEl)
     // index 1 = nome completo
@@ -655,53 +642,26 @@ async function runJob(job) {
     // Aguardar check de disponibilidade do username (API call assíncrono do Instagram ~2-3s)
     await sleep(3500);
 
-    // Dump de todos os <select> para encontrar os birthday dropdowns
-    const selectDump = await page.evaluate(() =>
-      Array.from(document.querySelectorAll('select'))
-        .map(s => `sel[title="${s.title}"|aria="${s.getAttribute('aria-label')}"|name="${s.name}"|id="${s.id}"|opts=${s.options.length}|val="${s.value}"]`)
-    ).catch(() => []);
-    log(id, `Selects (${selectDump.length}): ${selectDump.join(' || ')}`);
-
-    // Diagnóstico de birthday: comboboxes, listboxes, e HTML do elemento "Month"
-    const bdayDiag = await page.evaluate(() => {
-      const combos = [...document.querySelectorAll('[role="combobox"],[role="listbox"],[role="spinbutton"]')]
-        .map(e => `${e.tagName}[role=${e.getAttribute('role')}|aria=${e.getAttribute('aria-label')}]`);
-      // Encontrar elemento folha com texto "Month" ou "Mês"
-      const all = [...document.querySelectorAll('*')];
-      const monthEl = all.find(e => {
-        const t = (e.innerText || '').trim();
-        return (t === 'Month' || t === 'Mês') && e.children.length === 0;
-      });
-      const monthInfo = monthEl
-        ? `${monthEl.tagName}[role=${monthEl.getAttribute('role')}|aria=${monthEl.getAttribute('aria-label')}] parent=${monthEl.parentElement?.tagName}[role=${monthEl.parentElement?.getAttribute('role')}] grandp=${monthEl.parentElement?.parentElement?.tagName}[role=${monthEl.parentElement?.parentElement?.getAttribute('role')}]`
-        : 'month-not-found';
-      return { combos, monthInfo };
-    }).catch(() => ({ combos: [], monthInfo: 'error' }));
-    log(id, `Birthday diag: combos=[${bdayDiag.combos.join(',')}] month=${bdayDiag.monthInfo}`);
-
-    // Ler valores actuais dos campos (confirmar que React manteve os valores)
-    const fieldValues = await page.evaluate(() => {
-      return Array.from(document.querySelectorAll('input:not([type="hidden"])'))
-        .map(i => `${i.type}[val="${(i.value || '').slice(0, 20)}"]`);
-    }).catch(() => []);
-    log(id, `Valores actuais: ${fieldValues.join(', ')}`);
-
-    // Dump de botões para diagnóstico
-    const btns = await page.evaluate(() =>
-      [...document.querySelectorAll('button, [role="button"]')]
-        .map(b => `${b.tagName}|role=${b.getAttribute('role')||''}|disabled=${b.disabled||b.getAttribute('aria-disabled')}|txt="${(b.innerText||'').trim().slice(0,25)}"`)
-    ).catch(() => []);
-    log(id, `Botões (${btns.length}): ${btns.join(' :: ')}`);
-
     log(id, 'Submetendo formulário...');
+
+    // Método 1: click no botão
     const submitHow = await submitForm(page);
     log(id, `Submit via: ${submitHow}`);
-    await sleep(6000);
+    await sleep(3000);
+    log(id, `URL após método 1: ${page.url().split('/').slice(-2).join('/')}`);
 
-    // Logar URL e body após submit para diagnóstico
+    // Método 2: requestSubmit() no form
+    await page.evaluate(() => { const f = document.querySelector('form'); if (f) f.requestSubmit(); }).catch(() => {});
+    await sleep(2000);
+    log(id, `URL após método 2: ${page.url().split('/').slice(-2).join('/')}`);
+
+    // Método 3: Enter no campo de senha
+    const passElForSubmit = await page.$('input[type="password"]').catch(() => null);
+    if (passElForSubmit) { await passElForSubmit.focus().catch(() => {}); await page.keyboard.press('Enter'); }
+    await sleep(4000);
+
     const postSubmitUrl = page.url();
-    const postSubmitBody = await page.evaluate(() => (document.body.innerText || '').slice(0, 600)).catch(() => '');
-    log(id, `Pós-submit: URL=${postSubmitUrl.split('/').slice(-2).join('/')} | Body: ${postSubmitBody.replace(/\n/g,' ').slice(0, 300)}`);
+    log(id, `Pós-submit: URL=${postSubmitUrl.split('/').slice(-2).join('/')}`);
 
     // ── Wizard para passos subsequentes (aniversário, username extra, etc.) ──
     let otpDetected = false;
@@ -716,8 +676,7 @@ async function runJob(job) {
       await sleep(800);
       const visInputs = await getVisibleInputs();
       const url = page.url();
-      const bodySnip = await page.evaluate(() => (document.body.innerText || '').replace(/\n/g,' ').slice(0, 200)).catch(() => '');
-      log(id, `[wizard] step=${wizStep} url=${url.split('/').slice(-2).join('/')} inputs(${visInputs.length}) body: ${bodySnip}`);
+      log(id, `[wizard] step=${wizStep} url=${url.split('/').slice(-2).join('/')} inputs(${visInputs.length})`);
 
       if (!/accounts\/signup|accounts\/emailsignup/i.test(url)) {
         log(id, '[wizard] Saiu do signup — conta criada!');
