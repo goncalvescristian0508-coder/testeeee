@@ -442,13 +442,18 @@ async function runJob(job) {
     log(id, 'Digitando email...');
     await emailEl.click({ clickCount: 3 });
     await emailEl.type(email, { delay: 70 });
-    await sleep(800);
-    await page.keyboard.press('Tab'); // blur para disparar validação do campo
     await sleep(1000);
 
-    log(id, 'Avançando do passo 1 (email)...');
-    await clickButton(page, ['button[type="submit"]', 'button']);
-    await sleep(5000);
+    // Dump botões antes de submeter
+    const btnsAtStart = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('button, [role="button"]'))
+        .map(b => `${b.tagName}|type=${b.type}|txt="${(b.textContent || '').trim().slice(0, 30)}"`)
+    ).catch(() => []);
+    log(id, `Botões no passo 1: ${btnsAtStart.join(' :: ')}`);
+
+    log(id, 'Avançando do passo 1 (email) via Enter...');
+    await page.keyboard.press('Enter');
+    await sleep(7000); // Instagram precisa de tempo para validar email e avançar
 
     // ── Wizard multi-passo do Instagram ──────────────────────────────────────────
     // O Instagram mobile mostra os campos passo-a-passo no mesmo URL.
@@ -517,21 +522,36 @@ async function runJob(job) {
         continue;
       }
 
-      // Nenhum campo reconhecido — tentar clicar em qualquer botão "Next"
+      // Nenhum campo reconhecido — dump todos os botões para diagnóstico
+      const allBtns = await page.evaluate(() =>
+        Array.from(document.querySelectorAll('button, [role="button"]'))
+          .map(b => `${b.tagName}|type=${b.type}|txt="${(b.textContent || '').trim().slice(0, 25)}"`)
+      ).catch(() => []);
+      log(id, `[wizard] step=${wizStep} botões(${allBtns.length}): ${allBtns.join(' :: ')}`);
+
+      // Tentar clicar em botão com texto reconhecido
       const nextClicked = await page.evaluate(() => {
-        const btns = Array.from(document.querySelectorAll('button'));
-        const b = btns.find(b => /next|avançar|continue|próximo|seguinte|submit|ok/i.test(b.textContent || ''));
-        if (b) { b.click(); return b.textContent.trim().slice(0, 20); }
+        const els = Array.from(document.querySelectorAll('button, [role="button"]'));
+        const b = els.find(e => /next|avançar|continue|próximo|seguinte|ok\b/i.test((e.textContent || '').trim()));
+        if (b) { b.click(); return (b.textContent || '').trim().slice(0, 20); }
+        // Fallback: primeiro button[type="submit"] ou button
+        const sub = document.querySelector('button[type="submit"]');
+        if (sub) { sub.click(); return 'submit'; }
+        const any = document.querySelector('button');
+        if (any) { any.click(); return (any.textContent || '').trim().slice(0, 20) || 'button'; }
         return null;
       });
+
       if (nextClicked) {
-        log(id, `[wizard] Clicou botão "${nextClicked}"`);
-        await sleep(3500);
+        log(id, `[wizard] Clicou "${nextClicked}"`);
+        await sleep(4000);
         continue;
       }
 
-      log(id, '[wizard] Sem campos nem botões reconhecidos — a parar wizard');
-      break;
+      // Sem botão — pressionar Enter como fallback
+      log(id, '[wizard] Sem botão — Enter');
+      await page.keyboard.press('Enter');
+      await sleep(4000);
     }
 
     // ── OTP ────────────────────────────────────────────────────────────────────
