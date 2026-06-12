@@ -783,7 +783,7 @@ async function runJob(job) {
       log(id, '[outlook-early] Aguardando sessão Outlook (pré-scan)...');
       const { ctx: outlookCtx, page: outlookPage, triedCodes } = await outlookInitPromise;
 
-      for (let attempt = 0; attempt < 3; attempt++) {
+      for (let attempt = 0; attempt < 8; attempt++) {
         log(id, `[otp] Tentativa ${attempt + 1} — ${triedCodes.size} código(s) já tentado(s): ${[...triedCodes].join(',')}`);
         const otp = await scanForFreshOtp(id, outlookPage, email, triedCodes);
 
@@ -857,24 +857,37 @@ async function runJob(job) {
       const visInputs = await getVisibleInputs();
       log(id, `Pós-OTP step ${i + 1}: ${stepUrl.split('/').pop()} | inputs: ${visInputs.map(i => `${i.type}[${i.name || i.ph}]`).join(', ')}`);
 
+      // Se ainda estiver na tela OTP, não tentar preencher campos de texto normais
+      const stepBodyChk = await page.evaluate(() => (document.body.innerText||'').slice(0,200)).catch(()=>'');
+      if (/confirmation code|c[oó]digo de confirma/i.test(stepBodyChk)) {
+        log(id, 'Pós-OTP: ainda na tela OTP — parando loop pós-OTP.');
+        break;
+      }
+
       const posTextInputs = await page.$$('input[type="text"], input[type="tel"]');
       const posPassInput = await page.$('input[type="password"]').catch(() => null);
       let posAnyFilled = false;
       for (let ti = 0; ti < posTextInputs.length; ti++) {
-        const val = await posTextInputs[ti].evaluate(el => el.value || '');
-        if (!val) {
-          const fill = ti === 0 ? deriveName(email) : deriveUsername(email);
-          await posTextInputs[ti].click({ clickCount: 3 });
-          await posTextInputs[ti].type(fill, { delay: 70 });
-          log(id, `Pós-OTP: text[${ti}] preenchido`);
-          posAnyFilled = true;
-        }
+        try {
+          const visible = await posTextInputs[ti].evaluate(el => el.offsetParent !== null && !el.disabled).catch(()=>false);
+          if (!visible) continue;
+          const val = await posTextInputs[ti].evaluate(el => el.value || '');
+          if (!val) {
+            const fill = ti === 0 ? deriveName(email) : deriveUsername(email);
+            await posTextInputs[ti].click({ clickCount: 3 });
+            await posTextInputs[ti].type(fill, { delay: 70 });
+            log(id, `Pós-OTP: text[${ti}] preenchido`);
+            posAnyFilled = true;
+          }
+        } catch (e) { log(id, `Pós-OTP: text[${ti}] skip: ${e.message.slice(0,40)}`); }
       }
       if (posPassInput) {
-        const val = await posPassInput.evaluate(el => el.value || '');
-        if (!val) { await posPassInput.click({ clickCount: 3 }); await posPassInput.type(emailPassword, { delay: 70 }); posAnyFilled = true; }
+        try {
+          const val = await posPassInput.evaluate(el => el.value || '');
+          if (!val) { await posPassInput.click({ clickCount: 3 }); await posPassInput.type(emailPassword, { delay: 70 }); posAnyFilled = true; }
+        } catch (e) { log(id, `Pós-OTP: pass skip: ${e.message.slice(0,40)}`); }
       }
-      if (posAnyFilled) { const h = await submitForm(page); log(id, `Pós-OTP submit: ${h}`); await sleep(3500); continue; }
+      if (posAnyFilled) { const h = await submitForm(page).catch(e=>`err:${e.message.slice(0,30)}`); log(id, `Pós-OTP submit: ${h}`); await sleep(3500); continue; }
 
       const hasBirthday = await handleBirthday(id, page);
       if (hasBirthday) { await sleep(2000); continue; }
