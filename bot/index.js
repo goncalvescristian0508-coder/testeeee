@@ -61,13 +61,19 @@ async function loginOutlook(page, email, password) {
   } catch {}
 
   // Skip any Microsoft security/proofs pages (add phone, add email, etc.)
-  for (let i = 0; i < 4; i++) {
-    await sleep(1500);
+  for (let i = 0; i < 5; i++) {
+    await sleep(2000);
     const url = page.url();
     if (url.includes('outlook.live.com')) break;
-    if (url.includes('account.live.com/proofs') || url.includes('account.live.com/security') || url.includes('login.live.com')) {
-      log('outlook', `Skipping security page: ${url}`);
-      // Try "Skip for now" / "I'll add it later" / "Cancel" links or buttons
+
+    // login.live.com/login.srf is the post-auth redirect — just wait, don't interact
+    if (url.includes('login.live.com/login.srf')) {
+      log('outlook', `Waiting for post-auth redirect... (${url.slice(0, 60)})`);
+      continue;
+    }
+
+    if (url.includes('account.live.com/proofs') || url.includes('account.live.com/security')) {
+      log('outlook', `Skipping security page: ${url.slice(0, 80)}`);
       const skipped = await page.evaluate(() => {
         const texts = ['skip', 'later', 'cancel', 'not now', 'maybe later'];
         const els = Array.from(document.querySelectorAll('a, button, input[type="button"]'));
@@ -78,12 +84,12 @@ async function loginOutlook(page, email, password) {
           }
         }
         return null;
-      });
+      }).catch(() => null);
       if (skipped) {
         log('outlook', `Clicked skip: "${skipped}"`);
+        await sleep(2000);
       } else {
-        // Navigate directly to inbox
-        log('outlook', 'No skip button found — navigating directly to inbox');
+        log('outlook', 'No skip button — going direct to inbox');
         await page.goto('https://outlook.live.com/mail/0/inbox', { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
         break;
       }
