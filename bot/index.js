@@ -119,8 +119,8 @@ async function scanOutlookForCode(jobId, page) {
   for (const folderUrl of folderUrls) {
     log(jobId, `scanOutlook: navigating to ${folderUrl}...`);
     try {
-      await page.goto(folderUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
-      await sleep(2500);
+      await page.goto(folderUrl, { waitUntil: 'domcontentloaded', timeout: 40000 });
+      await sleep(3000);
     } catch (e) {
       log(jobId, `scanOutlook: navigation error: ${e.message}`);
       continue;
@@ -340,26 +340,9 @@ async function runJob(job) {
       }
     } catch {}
 
-    // ── Step 1: Switch to email signup if on phone page ──
-    if (page.url().includes('/signup/phone') || page.url().includes('accounts/signup/')) {
-      log(id, 'Phone page detected — clicking email link...');
-      const clicked = await page.evaluate(() => {
-        // Any link/button with "email" in text or href
-        for (const el of document.querySelectorAll('a, button, span[role="button"]')) {
-          if (/email/i.test(el.textContent) || (el.href && /email/i.test(el.href))) {
-            el.click();
-            return el.textContent.trim() || el.href;
-          }
-        }
-        return null;
-      }).catch(() => null);
-      log(id, `Email link result: ${clicked}`);
-      await sleep(3000);
-      log(id, `After email link: ${page.url()}`);
-    }
-
-    // ── Step 2: Find and fill email input ──
-    log(id, 'Looking for email field...');
+    // ── Step 1: Find the signup input (email or phone/email combined field) ──
+    // Instagram uses a single input that accepts both email and phone
+    log(id, `Page URL: ${page.url()}`);
     const EMAIL_SELS = [
       'input[name="emailOrPhone"]',
       'input[type="email"]',
@@ -367,11 +350,13 @@ async function runJob(job) {
       'input[aria-label*="email" i]',
       'input[placeholder*="email" i]',
       'input[placeholder*="e-mail" i]',
+      'input[type="tel"]',   // phone/email combined field
+      'input[type="text"]',
     ];
     let emailEl = null;
     for (const sel of EMAIL_SELS) {
-      try { emailEl = await page.waitForSelector(sel, { timeout: 3000 }); } catch {}
-      if (emailEl) { log(id, `Email field found: ${sel}`); break; }
+      emailEl = await page.$(sel).catch(() => null);
+      if (emailEl) { log(id, `Signup input found: ${sel}`); break; }
     }
 
     if (!emailEl) {
@@ -380,13 +365,12 @@ async function runJob(job) {
           `type=${i.type} name=${i.name} ph=${i.placeholder}`
         )
       ).catch(() => []);
-      log(id, `No email field. Inputs: ${inputsInfo.join(' | ')}`);
-      // Last resort: first visible input
+      log(id, `No input found. All inputs: ${inputsInfo.join(' | ')}`);
       emailEl = await page.$('input:not([type="hidden"])').catch(() => null);
-      if (!emailEl) throw new Error('Could not find email input on Instagram signup page');
-      log(id, 'Using first visible input as fallback');
+      if (!emailEl) throw new Error('Could not find signup input');
     }
 
+    log(id, 'Typing email into signup input...');
     await emailEl.click({ clickCount: 3 });
     await emailEl.type(email, { delay: 70 });
     await sleep(500);
