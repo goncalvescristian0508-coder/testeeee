@@ -439,23 +439,35 @@ async function runJob(job) {
       if (!emailEl) throw new Error('Não foi possível encontrar o campo de signup');
     }
 
-    // ── Mudar para o modo de registo por email (se estiver no modo telefone) ──
-    // Instagram mobile mostra o formulário de telefone por padrão.
-    // Clicar em "Sign up with email" / "Use email address" muda para o modo email.
+    // ── Mudar para modo email se Instagram mostrar formulário de telefone ──
+    // Encontrar o elemento folha com texto EXATO "Sign up with email" (não um pai que contenha o texto)
     const switchedToEmail = await page.evaluate(() => {
-      const btns = Array.from(document.querySelectorAll('button, [role="button"], a, span, div'));
-      const btn = btns.find(b => /sign up with email|use email|usar email|usar e-mail|email address|endereço de email/i.test((b.textContent || '').trim()));
-      if (btn) { btn.click(); return (btn.textContent || '').trim().slice(0, 40); }
+      const all = Array.from(document.querySelectorAll('*'));
+      // findLast não está disponível em todos os ambientes — usar reverse().find()
+      const el = [...all].reverse().find(e => {
+        const txt = (e.innerText || '').trim();
+        return txt.length < 60 && /sign up with email|use email address|usar email/i.test(txt);
+      });
+      if (el) { el.click(); return (el.innerText || '').trim().slice(0, 50); }
       return null;
     });
     if (switchedToEmail) {
       log(id, `Clicou em modo email: "${switchedToEmail}"`);
-      await sleep(3000);
-      // Re-encontrar o campo de email agora que o formulário mudou
+      await sleep(4000);
+      // Re-encontrar o campo de email
       for (const sel of EMAIL_SELS) {
         const newEl = await page.$(sel).catch(() => null);
         if (newEl) { emailEl = newEl; log(id, `Campo email (pós-switch): ${sel}`); break; }
       }
+      // Verificar se os botões mudaram (nova forma deve ter botões diferentes)
+      const newBtns = await page.evaluate(() =>
+        Array.from(document.querySelectorAll('button, [role="button"]'))
+          .map(b => (b.textContent || '').trim().slice(0, 20))
+          .filter(Boolean)
+      ).catch(() => []);
+      log(id, `Botões pós-switch: ${newBtns.join(' | ')}`);
+    } else {
+      log(id, 'Não encontrou "Sign up with email" — já no modo email ou outro fluxo');
     }
 
     log(id, 'Digitando email...');
