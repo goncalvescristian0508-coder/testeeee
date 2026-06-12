@@ -508,8 +508,9 @@ async function runJob(job) {
       const triedCodes = new Set();
       try {
         await loginOutlook(id, pg, email, emailPassword, proxyUser, proxyPass);
+        // Pre-scan só em other/junk — NÃO inbox. O código fresco do Instagram vai para inbox.
+        // Se escaneamos inbox no pre-scan, o código recém-chegado entra em triedCodes e é pulado!
         for (const folder of [
-          'https://outlook.live.com/mail/0/inbox',
           'https://outlook.live.com/mail/0/other',
           'https://outlook.live.com/mail/0/junkemail',
         ]) {
