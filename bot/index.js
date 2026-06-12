@@ -135,11 +135,30 @@ async function loginOutlook(jobId, page, email, password, proxyUser, proxyPass) 
 }
 
 async function scanFolder(jobId, page, email, folderUrl) {
+  const folder = folderUrl.split('/').pop();
   try {
     await page.goto(folderUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
     await sleep(3000);
 
-    // Clica no email do Instagram na lista (se existir)
+    const pageText = await page.evaluate(() => document.body.innerText || '').catch(() => '');
+
+    // Tentativa rápida: código visível na lista (sujeito/preview)
+    const listMatch = pageText.match(/instagram[^\n]{0,200}(\d{6})|(\d{6})[^\n]{0,100}instagram/i);
+    if (listMatch) {
+      const code = listMatch[1] || listMatch[2];
+      log(jobId, `[outlook] Código na lista (${folder}): ${code}`);
+      recentCodes.unshift({ email, code, foundAt: new Date().toISOString() });
+      if (recentCodes.length > 100) recentCodes.length = 100;
+      return code;
+    }
+
+    // Contar e logar itens da lista
+    const itemCount = await page.evaluate(() =>
+      document.querySelectorAll('[role="option"], [role="listitem"], [data-convid]').length
+    ).catch(() => 0);
+    log(jobId, `[outlook] ${folder}: ${itemCount} itens na lista`);
+
+    // Clicar no email do Instagram
     const clicked = await page.evaluate(() => {
       const els = [...document.querySelectorAll('[role="option"], [role="listitem"], [data-convid]')];
       const el = els.find(e => /instagram/i.test(e.title || e.innerText));
@@ -147,24 +166,29 @@ async function scanFolder(jobId, page, email, folderUrl) {
       return false;
     });
 
-    if (!clicked) return null;
-    await sleep(2000);
+    if (!clicked) {
+      log(jobId, `[outlook] ${folder}: email Instagram não encontrado`);
+      return null;
+    }
+
+    log(jobId, `[outlook] ${folder}: email clicado, lendo corpo...`);
+    await sleep(2500);
 
     const body = await page.evaluate(() => document.body.innerText || '');
-
-    // 1.ª tentativa — código perto de palavras-chave
     const near = body.match(/(?:c[oó]digo|code|verify|verification|confirmation)[^\d]{0,40}(\d{6})/i);
-    // 2.ª tentativa — qualquer número de 6 dígitos
     const match = near || body.match(/\b(\d{6})\b/);
-    if (!match) return null;
+    if (!match) {
+      log(jobId, `[outlook] ${folder}: corpo aberto mas código não encontrado`);
+      return null;
+    }
 
     const code = match[1];
-    log(jobId, `[outlook] Código encontrado (${folderUrl.split('/').pop()}): ${code}`);
+    log(jobId, `[outlook] Código encontrado (${folder}): ${code}`);
     recentCodes.unshift({ email, code, foundAt: new Date().toISOString() });
     if (recentCodes.length > 100) recentCodes.length = 100;
     return code;
   } catch (e) {
-    log(jobId, `[outlook] scanFolder erro (${folderUrl.split('/').pop()}): ${e.message}`);
+    log(jobId, `[outlook] scanFolder erro (${folder}): ${e.message}`);
     return null;
   }
 }
