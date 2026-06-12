@@ -571,6 +571,13 @@ async function runJob(job) {
     // Aguardar check de disponibilidade do username (API call assíncrono do Instagram ~2-3s)
     await sleep(3500);
 
+    // Dump de todos os <select> para encontrar os birthday dropdowns
+    const selectDump = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('select'))
+        .map(s => `sel[title="${s.title}"|aria="${s.getAttribute('aria-label')}"|name="${s.name}"|id="${s.id}"|opts=${s.options.length}|val="${s.value}"]`)
+    ).catch(() => []);
+    log(id, `Selects (${selectDump.length}): ${selectDump.join(' || ')}`);
+
     // Ler valores actuais dos campos (confirmar que React manteve os valores)
     const fieldValues = await page.evaluate(() => {
       return Array.from(document.querySelectorAll('input:not([type="hidden"])'))
