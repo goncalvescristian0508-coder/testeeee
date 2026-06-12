@@ -311,6 +311,18 @@ async function submitForm(page) {
   // Broader pattern — no anchors, covers PT/EN variants of "Sign up / Next / Continue"
   const txt = await clickByText(page, 'sign up|cadastr|criar conta|inscrever|next|avançar|continuar|seguinte|register|pr[oó]ximo');
   if (txt) return `text:"${txt}"`;
+  // Try any [role="button"] that doesn't look like Log in / Forgot
+  const roleClicked = await page.evaluate(() => {
+    const els = [...document.querySelectorAll('[role="button"]')];
+    const el = els.find(e => {
+      const txt = (e.innerText || '').trim();
+      return txt.length > 0 && txt.length < 50 &&
+        !/log in|entrar|esqueceu|forgot|facebook|with facebook|google/i.test(txt);
+    });
+    if (el) { el.click(); return (el.innerText || '').trim().slice(0, 30); }
+    return null;
+  }).catch(() => null);
+  if (roleClicked) return `role-button:"${roleClicked}"`;
   await page.keyboard.press('Enter');
   return 'Enter';
 }
@@ -544,10 +556,27 @@ async function runJob(job) {
       await sleep(600);
     }
 
+    // Aguardar check de disponibilidade do username (API call assíncrono do Instagram ~2-3s)
+    await sleep(3500);
+
+    // Ler valores actuais dos campos (confirmar que React manteve os valores)
+    const fieldValues = await page.evaluate(() => {
+      return Array.from(document.querySelectorAll('input:not([type="hidden"])'))
+        .map(i => `${i.type}[val="${(i.value || '').slice(0, 20)}"]`);
+    }).catch(() => []);
+    log(id, `Valores actuais: ${fieldValues.join(', ')}`);
+
+    // Dump de botões para diagnóstico
+    const btns = await page.evaluate(() =>
+      [...document.querySelectorAll('button, [role="button"]')]
+        .map(b => `${b.tagName}|role=${b.getAttribute('role')||''}|disabled=${b.disabled||b.getAttribute('aria-disabled')}|txt="${(b.innerText||'').trim().slice(0,25)}"`)
+    ).catch(() => []);
+    log(id, `Botões (${btns.length}): ${btns.join(' :: ')}`);
+
     log(id, 'Submetendo formulário...');
     const submitHow = await submitForm(page);
     log(id, `Submit via: ${submitHow}`);
-    await sleep(4000);
+    await sleep(5000);
 
     await handleBirthday(id, page);
     await sleep(2000);
