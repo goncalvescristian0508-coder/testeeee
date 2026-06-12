@@ -4,6 +4,7 @@ const express = require('express');
 const puppeteerExtra = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
 const { v4: uuidv4 } = require('uuid');
+const fs = require('fs');
 
 puppeteerExtra.use(StealthPlugin());
 
@@ -20,6 +21,22 @@ const jobs = {};
 
 // Últimos 100 códigos encontrados — exposto via GET /codes
 const recentCodes = [];
+
+// Contas criadas — persiste em disco
+const ACCOUNTS_FILE = '/root/testeeee/created_accounts.json';
+const savedAccounts = (() => {
+  try { return JSON.parse(fs.readFileSync(ACCOUNTS_FILE, 'utf8')); } catch { return []; }
+})();
+
+function saveAccount(job) {
+  savedAccounts.push({
+    email: job.email,
+    emailPassword: job.emailPassword,
+    instagramUrl: job.instagramUrl,
+    createdAt: new Date().toISOString(),
+  });
+  try { fs.writeFileSync(ACCOUNTS_FILE, JSON.stringify(savedAccounts, null, 2)); } catch (e) { console.error('saveAccount err:', e.message); }
+}
 
 function log(jobId, msg) {
   const line = `${new Date().toISOString()} ${msg}`;
@@ -916,6 +933,7 @@ async function runJob(job) {
     } else {
       job.status = 'done';
       log(id, 'Conta criada com sucesso!');
+      saveAccount(job);
     }
     job.instagramUrl = finalUrl;
 
@@ -990,6 +1008,10 @@ app.get('/jobs', authMiddleware, (req, res) => {
       id, email, status, createdAt, instagramUrl, error,
     }))
   );
+});
+
+app.get('/created-accounts', authMiddleware, (_req, res) => {
+  res.json(savedAccounts);
 });
 
 app.get('/health', (_req, res) => res.json({ ok: true, activeJobs: Object.values(jobs).filter(j => j.status === 'running' || j.status === 'waiting_otp').length }));
