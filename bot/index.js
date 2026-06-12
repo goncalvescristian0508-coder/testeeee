@@ -134,7 +134,7 @@ async function loginOutlook(jobId, page, email, password, proxyUser, proxyPass) 
   log(jobId, `[outlook] Login concluído. URL: ${page.url().split('?')[0]}`);
 }
 
-async function scanFolder(jobId, page, email, folderUrl) {
+async function scanFolder(jobId, page, email, folderUrl, triedCodes = new Set()) {
   const folder = folderUrl.split('/').pop();
   try {
     await page.goto(folderUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
@@ -143,13 +143,18 @@ async function scanFolder(jobId, page, email, folderUrl) {
     const pageText = await page.evaluate(() => document.body.innerText || '').catch(() => '');
 
     // Tentativa rápida: código visível na lista (sujeito/preview)
-    const listMatch = pageText.match(/instagram[^\n]{0,200}(\d{6})|(\d{6})[^\n]{0,100}instagram/i);
-    if (listMatch) {
-      const code = listMatch[1] || listMatch[2];
-      log(jobId, `[outlook] Código na lista (${folder}): ${code}`);
-      recentCodes.unshift({ email, code, foundAt: new Date().toISOString() });
-      if (recentCodes.length > 100) recentCodes.length = 100;
-      return code;
+    const listMatches = [];
+    const re = /instagram[^\n]{0,200}(\d{6})|(\d{6})[^\n]{0,100}instagram/gi;
+    let m;
+    while ((m = re.exec(pageText)) !== null) listMatches.push(m[1] || m[2]);
+    for (const code of listMatches) {
+      if (!triedCodes.has(code)) {
+        log(jobId, `[outlook] Código na lista (${folder}): ${code}`);
+        triedCodes.add(code);
+        recentCodes.unshift({ email, code, foundAt: new Date().toISOString() });
+        if (recentCodes.length > 100) recentCodes.length = 100;
+        return code;
+      }
     }
 
     // Contar e logar itens da lista
@@ -158,42 +163,57 @@ async function scanFolder(jobId, page, email, folderUrl) {
     ).catch(() => 0);
     log(jobId, `[outlook] ${folder}: ${itemCount} itens na lista`);
 
-    // Clicar no email do Instagram
-    const clicked = await page.evaluate(() => {
+    // Recolher todos os emails do Instagram (mais recentes primeiro = ordem do DOM no Outlook)
+    const igCount = await page.evaluate(() => {
       const els = [...document.querySelectorAll('[role="option"], [role="listitem"], [data-convid]')];
-      const el = els.find(e => /instagram/i.test(e.title || e.innerText));
-      if (el) { el.click(); return true; }
-      return false;
-    });
+      return els.filter(e => /instagram/i.test(e.title || e.innerText)).length;
+    }).catch(() => 0);
+    log(jobId, `[outlook] ${folder}: ${igCount} emails Instagram encontrados`);
 
-    if (!clicked) {
-      log(jobId, `[outlook] ${folder}: email Instagram não encontrado`);
-      return null;
+    // Tentar cada email do Instagram (mais recente primeiro)
+    for (let idx = 0; idx < igCount; idx++) {
+      const clicked = await page.evaluate((i) => {
+        const els = [...document.querySelectorAll('[role="option"], [role="listitem"], [data-convid]')];
+        const igEls = els.filter(e => /instagram/i.test(e.title || e.innerText));
+        if (igEls[i]) { igEls[i].click(); return true; }
+        return false;
+      }, idx);
+
+      if (!clicked) break;
+
+      log(jobId, `[outlook] ${folder}: email ${idx + 1}/${igCount} clicado, lendo corpo...`);
+      await sleep(2500);
+
+      const body = await page.evaluate(() => document.body.innerText || '');
+      const near = body.match(/(?:c[oó]digo|code|verify|verification|confirmation)[^\d]{0,40}(\d{6})/i);
+      const match = near || body.match(/\b(\d{6})\b/);
+      if (!match) {
+        log(jobId, `[outlook] ${folder}: email ${idx + 1} aberto mas sem código`);
+        continue;
+      }
+
+      const code = match[1];
+      if (triedCodes.has(code)) {
+        log(jobId, `[outlook] ${folder}: código ${code} já tentado, ignorando email ${idx + 1}`);
+        continue;
+      }
+
+      log(jobId, `[outlook] Código encontrado (${folder}, email ${idx + 1}): ${code}`);
+      triedCodes.add(code);
+      recentCodes.unshift({ email, code, foundAt: new Date().toISOString() });
+      if (recentCodes.length > 100) recentCodes.length = 100;
+      return code;
     }
 
-    log(jobId, `[outlook] ${folder}: email clicado, lendo corpo...`);
-    await sleep(2500);
-
-    const body = await page.evaluate(() => document.body.innerText || '');
-    const near = body.match(/(?:c[oó]digo|code|verify|verification|confirmation)[^\d]{0,40}(\d{6})/i);
-    const match = near || body.match(/\b(\d{6})\b/);
-    if (!match) {
-      log(jobId, `[outlook] ${folder}: corpo aberto mas código não encontrado`);
-      return null;
-    }
-
-    const code = match[1];
-    log(jobId, `[outlook] Código encontrado (${folder}): ${code}`);
-    recentCodes.unshift({ email, code, foundAt: new Date().toISOString() });
-    if (recentCodes.length > 100) recentCodes.length = 100;
-    return code;
+    log(jobId, `[outlook] ${folder}: nenhum código novo encontrado`);
+    return null;
   } catch (e) {
     log(jobId, `[outlook] scanFolder erro (${folder}): ${e.message}`);
     return null;
   }
 }
 
-async function waitForEmailOtp(jobId, email, password, browser, proxyUser, proxyPass) {
+async function waitForEmailOtp(jobId, email, password, browser, proxyUser, proxyPass, triedCodes = new Set()) {
   log(jobId, '[outlook] Abrindo contexto incógnito...');
   const ctx = await browser.createIncognitoBrowserContext();
   const emailPage = await ctx.newPage();
@@ -219,7 +239,7 @@ async function waitForEmailOtp(jobId, email, password, browser, proxyUser, proxy
         return code;
       }
 
-      const code = await scanFolder(jobId, emailPage, email, folders[fi % folders.length]);
+      const code = await scanFolder(jobId, emailPage, email, folders[fi % folders.length], triedCodes);
       fi++;
       if (code) return code;
 
@@ -409,33 +429,50 @@ async function runJob(job) {
 
     // ── OTP ──
     const content = await page.content();
-    const needsOtp = /confirmationCode|verificationCode|enter.*code|código|verification code/i.test(content);
+    const needsOtp = /confirmationCode|verificationCode|enter.*code|c[oó]digo|verification code/i.test(content);
 
     if (needsOtp) {
       log(id, 'Instagram pede verificação por email...');
-      const otp = await waitForEmailOtp(id, email, emailPassword, browser, proxyUser, proxyPass);
-
-      log(id, `Inserindo OTP: ${otp}`);
       const otpSel = 'input[name="confirmationCode"], input[name="verificationCode"], input[aria-label*="code" i], input[aria-label*="código" i], input[autocomplete="one-time-code"]';
-      const typed = await typeInto(page, otpSel, otp);
+      const triedCodes = new Set();
 
-      if (!typed) {
-        // Fallback: campo com maxLength=6 ou nome com "code"
-        for (const inp of await page.$$('input[type="text"], input[type="tel"], input[type="number"], input:not([type="hidden"])')) {
-          const info = await inp.evaluate(el => ({ maxLen: el.maxLength, name: el.name }));
-          if (info.maxLen === 6 || /code|verification|confirm/i.test(info.name)) {
-            await inp.click({ clickCount: 3 });
-            await inp.type(otp, { delay: 100 });
-            log(id, `OTP via fallback (name=${info.name})`);
-            break;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const otp = await waitForEmailOtp(id, email, emailPassword, browser, proxyUser, proxyPass, triedCodes);
+
+        log(id, `Inserindo OTP (tentativa ${attempt + 1}): ${otp}`);
+        const typed = await typeInto(page, otpSel, otp);
+
+        if (!typed) {
+          // Fallback: campo com maxLength=6 ou nome com "code"
+          for (const inp of await page.$$('input[type="text"], input[type="tel"], input[type="number"], input:not([type="hidden"])')) {
+            const info = await inp.evaluate(el => ({ maxLen: el.maxLength, name: el.name }));
+            if (info.maxLen === 6 || /code|verification|confirm/i.test(info.name)) {
+              await inp.click({ clickCount: 3 });
+              await inp.type(otp, { delay: 100 });
+              log(id, `OTP via fallback (name=${info.name})`);
+              break;
+            }
           }
         }
+
+        await sleep(500);
+        await clickButton(page, ['button[type="submit"]']);
+        await sleep(6000);
+
+        const postOtpUrl = page.url();
+        log(id, `URL após OTP tentativa ${attempt + 1}: ${postOtpUrl}`);
+
+        if (!/accounts\/signup|accounts\/emailsignup/i.test(postOtpUrl)) {
+          break; // OTP aceite — avançar
+        }
+
+        // Verificar se Instagram reportou erro explícito
+        const errContent = await page.content();
+        const rejected = /invalid|expired|incorrect|inv[aá]lid|expirou|expirad|incorreto/i.test(errContent);
+        log(id, `OTP ${otp} ${rejected ? 'rejeitado pelo Instagram' : 'URL não mudou — a tentar novo código'}...`);
       }
 
-      await sleep(500);
-      await clickButton(page, ['button[type="submit"]']);
-      await sleep(4000);
-      log(id, `URL após OTP: ${page.url()}`);
+      log(id, `URL final pós-OTP: ${page.url()}`);
     }
 
     // ── Campos de perfil pós-OTP ──
