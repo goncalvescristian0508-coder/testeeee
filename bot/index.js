@@ -350,15 +350,25 @@ async function submitForm(page) {
   return 'Enter';
 }
 
-function deriveUsername(email) {
-  const base = email.split('@')[0].toLowerCase().replace(/[^a-z0-9._]/g, '');
-  return base.slice(0, 20) + Math.floor(Math.random() * 9999);
+// Identidade feminina brasileira por email (gerada uma vez por job)
+const _identities = new Map();
+const _FIRST = ['Ana','Maria','Julia','Beatriz','Gabriela','Amanda','Camila','Fernanda','Leticia','Mariana','Isabella','Larissa','Natalia','Patricia','Rafaela','Carolina','Vanessa','Priscila','Aline','Bruna','Claudia','Daniele','Elaine','Fabiana','Giovanna','Helena','Isabela','Jaqueline','Katia','Livia','Monica','Nathalia','Paula','Renata','Sabrina','Tatiane','Viviane','Yasmin','Andreia','Bianca','Carla','Debora','Erica','Flavia','Gisele','Heloisa','Ingrid','Jessica','Karen','Luciana','Michele','Nadia','Olivia','Pamela','Rebecca','Simone','Thais','Valeria','Wanessa'];
+const _LAST = ['Silva','Santos','Oliveira','Costa','Ferreira','Alves','Rodrigues','Pereira','Gomes','Martins','Lima','Carvalho','Souza','Ribeiro','Araujo','Mendes','Barbosa','Rocha','Cardoso','Nascimento','Teixeira','Moreira','Correia','Dias','Nunes','Azevedo','Pinto','Ramos','Fonseca','Monteiro','Castro','Machado','Campos','Cruz','Freitas','Andrade','Lopes','Vieira','Cunha','Batista'];
+
+function _pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+function _getIdentity(email) {
+  if (!_identities.has(email)) {
+    const first = _pick(_FIRST);
+    const last  = _pick(_LAST);
+    const user  = (first + last).toLowerCase().replace(/[^a-z]/g, '') + Math.floor(1000 + Math.random() * 8999);
+    _identities.set(email, { name: `${first} ${last}`, username: user.slice(0, 28) });
+  }
+  return _identities.get(email);
 }
 
-function deriveName(email) {
-  const raw = email.split('@')[0].replace(/[0-9_\-.]/g, ' ').replace(/([A-Z])/g, ' $1').trim();
-  return raw || 'User';
-}
+function deriveName(email)     { return _getIdentity(email).name; }
+function deriveUsername(email) { return _getIdentity(email).username; }
 
 async function handleBirthday(jobId, page) {
   try {
