@@ -109,43 +109,51 @@ async function loginOutlook(page, email, password) {
 async function scanOutlookForCode(jobId, page) {
   log(jobId, 'scanOutlook: starting...');
 
-  const folderSelectors = [
-    '[aria-label="Inbox, Primary"], [title="Inbox"], [aria-label="Inbox"]',
-    '[aria-label="Other"], [title="Other"]',
-    '[aria-label="Junk Email"], [title="Junk Email"], [aria-label="Spam"]',
+  // Navigate to each folder URL directly — avoids fragile sidebar selectors
+  const folderUrls = [
+    'https://outlook.live.com/mail/0/inbox',
+    'https://outlook.live.com/mail/0/other',
+    'https://outlook.live.com/mail/0/junkemail',
   ];
 
-  for (const folderSel of folderSelectors) {
-    log(jobId, `scanOutlook: trying folder "${folderSel}"...`);
+  for (const folderUrl of folderUrls) {
+    log(jobId, `scanOutlook: navigating to ${folderUrl}...`);
     try {
-      const folderBtn = await page.$(folderSel);
-      if (!folderBtn) {
-        log(jobId, 'scanOutlook: folder button not found, skipping');
-        continue;
-      }
-      await folderBtn.click();
-      await sleep(1500);
+      await page.goto(folderUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
+      await sleep(2500);
     } catch (e) {
-      log(jobId, `scanOutlook: folder click error: ${e.message}`);
+      log(jobId, `scanOutlook: navigation error: ${e.message}`);
+      continue;
     }
 
-    const rows = await page.$$('[role="option"], [data-convid], [data-itemid]');
-    log(jobId, `scanOutlook: found ${rows.length} email rows`);
+    // Find email rows — Outlook uses various role/data attributes
+    const rows = await page.$$('[role="option"], [data-convid], [data-itemid], [aria-label*="Instagram" i]');
+    log(jobId, `scanOutlook: found ${rows.length} rows`);
 
     for (const row of rows) {
       const text = await row.evaluate((el) => el.textContent).catch(() => '');
       if (/instagram/i.test(text)) {
         log(jobId, 'scanOutlook: found Instagram email, opening...');
-        await row.click();
+        await row.click().catch(() => {});
         await sleep(2000);
 
-        const bodyText = await page.evaluate(() => document.body.innerText);
+        const bodyText = await page.evaluate(() => document.body.innerText).catch(() => '');
         const m = bodyText.match(/\b(\d{6})\b/);
         if (m) {
           log(jobId, `scanOutlook: OTP found: ${m[1]}`);
           return m[1];
         }
-        log(jobId, 'scanOutlook: no 6-digit code in email body');
+        log(jobId, 'scanOutlook: no 6-digit code found in email body');
+      }
+    }
+
+    // Fallback: search entire page text for a 6-digit code near "Instagram"
+    const pageText = await page.evaluate(() => document.body.innerText).catch(() => '');
+    if (/instagram/i.test(pageText)) {
+      const m = pageText.match(/\b(\d{6})\b/);
+      if (m) {
+        log(jobId, `scanOutlook: OTP found via page text: ${m[1]}`);
+        return m[1];
       }
     }
   }
