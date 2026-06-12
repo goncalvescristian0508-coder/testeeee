@@ -3,6 +3,7 @@
 const express = require('express');
 const puppeteerExtra = require('puppeteer-extra');
 const StealthPlugin = require('puppeteer-extra-plugin-stealth');
+const { ImapFlow } = require('imapflow');
 const { v4: uuidv4 } = require('uuid');
 
 puppeteerExtra.use(StealthPlugin());
@@ -26,168 +27,67 @@ function log(jobId, msg) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// ── Outlook helpers ────────────────────────────────────────────────────────────
+// ── IMAP email OTP reader ──────────────────────────────────────────────────────
 
-async function loginOutlook(page, email, password) {
-  log('outlook', `Logging in as ${email}...`);
-
-  await page.goto(
-    `https://login.live.com/login.srf?wa=wsignin1.0&rpsnv=13&ct=1&rver=7.0.6737.0&wp=MBI_SSL&wreply=https%3A%2F%2Foutlook.live.com%2Fowa%2F&id=292841`,
-    { waitUntil: 'networkidle2', timeout: 60000 }
-  );
-  await sleep(2000);
-
-  if (page.url().includes('outlook.live.com/mail') || page.url().includes('outlook.live.com/owa')) {
-    log('outlook', 'Already logged in.');
-    return;
-  }
-
-  const emailInput = await page.waitForSelector('input[type="email"], input[name="loginfmt"]', { timeout: 20000 });
-  await emailInput.click({ clickCount: 3 });
-  await emailInput.type(email, { delay: 70 });
-  await page.keyboard.press('Enter');
-  await sleep(2500);
-
-  const passInput = await page.waitForSelector('input[type="password"], input[name="passwd"]', { timeout: 15000 });
-  await passInput.click({ clickCount: 3 });
-  await passInput.type(password, { delay: 70 });
-  await page.keyboard.press('Enter');
-  await sleep(4000);
-
-  // "Stay signed in?" → click No
-  try {
-    const noBtn = await page.$('#idBtn_Back');
-    if (noBtn) { await noBtn.click(); await sleep(2000); }
-  } catch {}
-
-  // Skip any Microsoft security/proofs pages (add phone, add email, etc.)
-  for (let i = 0; i < 5; i++) {
-    await sleep(2000);
-    const url = page.url();
-    if (url.includes('outlook.live.com')) break;
-
-    // login.live.com/login.srf is the post-auth redirect — just wait, don't interact
-    if (url.includes('login.live.com/login.srf')) {
-      log('outlook', `Waiting for post-auth redirect... (${url.slice(0, 60)})`);
-      continue;
-    }
-
-    if (url.includes('account.live.com/proofs') || url.includes('account.live.com/security')) {
-      log('outlook', `Skipping security page: ${url.slice(0, 80)}`);
-      const skipped = await page.evaluate(() => {
-        const texts = ['skip', 'later', 'cancel', 'not now', 'maybe later'];
-        const els = Array.from(document.querySelectorAll('a, button, input[type="button"]'));
-        for (const el of els) {
-          if (texts.some(t => el.textContent.toLowerCase().includes(t))) {
-            el.click();
-            return el.textContent.trim();
-          }
-        }
-        return null;
-      }).catch(() => null);
-      if (skipped) {
-        log('outlook', `Clicked skip: "${skipped}"`);
-        await sleep(2000);
-      } else {
-        log('outlook', 'No skip button — going direct to inbox');
-        await page.goto('https://outlook.live.com/mail/0/inbox', { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
-        break;
-      }
-    }
-  }
-
-  // Final fallback: go to inbox directly
-  if (!page.url().includes('outlook.live.com')) {
-    log('outlook', 'Forcing navigation to Outlook inbox');
-    await page.goto('https://outlook.live.com/mail/0/inbox', { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
-    await sleep(3000);
-  }
-
-  log('outlook', `Outlook ready. URL: ${page.url()}`);
-}
-
-async function scanOutlookForCode(jobId, page) {
-  log(jobId, 'scanOutlook: starting...');
-
-  // Navigate to each folder URL directly — avoids fragile sidebar selectors
-  const folderUrls = [
-    'https://outlook.live.com/mail/0/inbox',
-    'https://outlook.live.com/mail/0/other',
-    'https://outlook.live.com/mail/0/junkemail',
-  ];
-
-  for (const folderUrl of folderUrls) {
-    log(jobId, `scanOutlook: navigating to ${folderUrl}...`);
-    try {
-      await page.goto(folderUrl, { waitUntil: 'domcontentloaded', timeout: 40000 });
-      await sleep(3000);
-    } catch (e) {
-      log(jobId, `scanOutlook: navigation error: ${e.message}`);
-      continue;
-    }
-
-    // Find email rows — Outlook uses various role/data attributes
-    const rows = await page.$$('[role="option"], [data-convid], [data-itemid], [aria-label*="Instagram" i]');
-    log(jobId, `scanOutlook: found ${rows.length} rows`);
-
-    for (const row of rows) {
-      const text = await row.evaluate((el) => el.textContent).catch(() => '');
-      if (/instagram/i.test(text)) {
-        log(jobId, 'scanOutlook: found Instagram email, opening...');
-        await row.click().catch(() => {});
-        await sleep(2000);
-
-        const bodyText = await page.evaluate(() => document.body.innerText).catch(() => '');
-        const m = bodyText.match(/\b(\d{6})\b/);
-        if (m) {
-          log(jobId, `scanOutlook: OTP found: ${m[1]}`);
-          return m[1];
-        }
-        log(jobId, 'scanOutlook: no 6-digit code found in email body');
-      }
-    }
-
-    // Fallback: search entire page text for a 6-digit code near "Instagram"
-    const pageText = await page.evaluate(() => document.body.innerText).catch(() => '');
-    if (/instagram/i.test(pageText)) {
-      const m = pageText.match(/\b(\d{6})\b/);
-      if (m) {
-        log(jobId, `scanOutlook: OTP found via page text: ${m[1]}`);
-        return m[1];
-      }
-    }
-  }
-
-  log(jobId, 'scanOutlook: no OTP found in any folder');
-  return null;
-}
-
-async function waitForEmailOtp(jobId, emailPage, emailBrowser, maxWait = 180000) {
-  log(jobId, 'Waiting for OTP in Outlook...');
+async function waitForEmailOtp(jobId, email, password, maxWait = 180000) {
+  log(jobId, 'Waiting for Instagram OTP via IMAP...');
   const deadline = Date.now() + maxWait;
   let attempt = 0;
 
   while (Date.now() < deadline) {
     attempt++;
-    await sleep(7000);
-    log(jobId, `OTP scan attempt #${attempt}...`);
+    // First attempt: wait 15s for email to arrive; after that 8s between tries
+    await sleep(attempt === 1 ? 15000 : 8000);
+    log(jobId, `IMAP scan attempt #${attempt}...`);
+
+    const client = new ImapFlow({
+      host: 'outlook.office365.com',
+      port: 993,
+      secure: true,
+      auth: { user: email, pass: password },
+      logger: false,
+    });
+
     try {
-      // Use domcontentloaded — faster than networkidle2 and avoids hanging
-      await emailPage.reload({ waitUntil: 'domcontentloaded', timeout: 25000 });
-      await sleep(2000);
-      const code = await scanOutlookForCode(jobId, emailPage);
-      if (code) {
-        log(jobId, `OTP found: ${code} — closing email browser`);
-        await emailBrowser.close().catch(() => {});
-        return code;
+      await client.connect();
+
+      const folders = ['INBOX', 'Junk'];
+      for (const folder of folders) {
+        try {
+          await client.mailboxOpen(folder, { readOnly: true });
+        } catch {
+          continue;
+        }
+
+        // Search Instagram emails in the last 20 minutes
+        const since = new Date(Date.now() - 20 * 60 * 1000);
+        const uids = await client.search({ from: 'instagram', since }).catch(() => []);
+        log(jobId, `IMAP ${folder}: ${uids.length} Instagram messages`);
+
+        for (const uid of uids.slice(-5)) {
+          let source = '';
+          try {
+            for await (const msg of client.fetch([uid], { source: true })) {
+              source = msg.source.toString();
+            }
+          } catch {}
+          const m = source.match(/\b(\d{6})\b/);
+          if (m) {
+            log(jobId, `OTP found via IMAP: ${m[1]}`);
+            await client.logout().catch(() => {});
+            return m[1];
+          }
+        }
       }
+
+      await client.logout().catch(() => {});
       log(jobId, 'OTP not found yet, retrying...');
     } catch (e) {
-      log(jobId, `Outlook scan error: ${e.message}`);
+      log(jobId, `IMAP error: ${e.message}`);
+      await client.logout().catch(() => {});
     }
   }
 
-  await emailBrowser.close().catch(() => {});
   throw new Error('Timeout waiting for email OTP');
 }
 
@@ -278,17 +178,8 @@ async function runJob(job) {
     '--disable-blink-features=AutomationControlled',
     '--window-size=390,844',
     '--disable-gpu',
-    '--js-flags=--max-old-space-size=256',
   ];
   if (!noProxy) args.push('--proxy-server=http://gw.dataimpulse.com:823');
-
-  const emailArgs = [
-    '--no-sandbox',
-    '--disable-setuid-sandbox',
-    '--disable-dev-shm-usage',
-    '--disable-gpu',
-    '--js-flags=--max-old-space-size=256',
-  ];
 
   const browser = await puppeteerExtra.launch({
     headless: true,
@@ -297,24 +188,7 @@ async function runJob(job) {
     defaultViewport: { width: 390, height: 844, isMobile: true, hasTouch: true },
   });
 
-  const emailBrowser = await puppeteerExtra.launch({
-    headless: true,
-    args: emailArgs,
-    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
-  });
-
-  let emailBrowserClosed = false;
-
   try {
-    // ── Login to Outlook ──
-    log(id, 'Opening Outlook...');
-    const emailPage = await emailBrowser.newPage();
-    await emailPage.setUserAgent(
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-    );
-    await loginOutlook(emailPage, email, emailPassword);
-    log(id, 'Outlook logged in.');
-
     // ── Open Instagram signup ──
     const page = await browser.newPage();
     await page.setUserAgent(
@@ -396,8 +270,7 @@ async function runJob(job) {
 
     if (needsOtp) {
       log(id, 'Instagram requires email OTP...');
-      const otp = await waitForEmailOtp(id, emailPage, emailBrowser);
-      emailBrowserClosed = true;
+      const otp = await waitForEmailOtp(id, email, emailPassword);
 
       log(id, `Entering OTP: ${otp}`);
       const otpSelectors = 'input[name="confirmationCode"], input[name="verificationCode"], input[aria-label*="code" i], input[aria-label*="código" i], input[autocomplete="one-time-code"]';
@@ -483,7 +356,6 @@ async function runJob(job) {
     job.error = err.message;
   } finally {
     await browser.close().catch(() => {});
-    if (!emailBrowserClosed) await emailBrowser.close().catch(() => {});
   }
 }
 
