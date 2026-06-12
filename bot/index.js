@@ -308,7 +308,8 @@ async function clickByText(page, pattern) {
 // Submit the current form: try <button type=submit>, then text-based, then Enter
 async function submitForm(page) {
   if (await clickButton(page, ['button[type="submit"]'])) return 'button[type=submit]';
-  const txt = await clickByText(page, '^(sign up|cadastrar|criar conta|next|avançar|continuar|ok)$');
+  // Broader pattern — no anchors, covers PT/EN variants of "Sign up / Next / Continue"
+  const txt = await clickByText(page, 'sign up|cadastr|criar conta|inscrever|next|avançar|continuar|seguinte|register|pr[oó]ximo');
   if (txt) return `text:"${txt}"`;
   await page.keyboard.press('Enter');
   return 'Enter';
@@ -522,10 +523,15 @@ async function runJob(job) {
       log(id, 'AVISO: campo nome não encontrado (só 1 text input)');
     }
 
-    if (userInput) {
-      await userInput.click({ clickCount: 3 });
-      await userInput.type(deriveUsername(email), { delay: 70 });
-      log(id, 'Username preenchido (posicional idx=2)');
+    // Username field: Instagram usa type="search" com aria-label="Username" (não type="text")
+    // Não está no allTextInputs — encontrar por aria-label
+    const usernameEl = await page.$(
+      'input[aria-label*="Username" i], input[aria-label*="nome de usu" i], input[aria-label*="usuário" i]'
+    ).catch(() => null) || userInput || null;
+    if (usernameEl) {
+      await usernameEl.click({ clickCount: 3 });
+      await usernameEl.type(deriveUsername(email), { delay: 70 });
+      log(id, 'Username preenchido (aria-label / posicional)');
       await sleep(400);
     } else {
       log(id, 'Username não encontrado — pode aparecer após submit');
@@ -588,30 +594,31 @@ async function runJob(job) {
       }
 
       // Preencher campos por posição (locale-agnostic)
+      // text/tel inputs: idx 0 = email, idx 1 = full name
+      // username: tipo "search" com aria-label="Username" (separado!)
+      // password: tipo "password"
       const wizTextInputs = await page.$$('input[type="text"], input[type="tel"]');
+      const wizUsernameEl = await page.$('input[aria-label*="Username" i], input[aria-label*="nome de usu" i], input[aria-label*="usuário" i]').catch(() => null);
       const wizPassInput = await page.$('input[type="password"]').catch(() => null);
 
       let anyFilled = false;
-      // Se só 1 text input → provável username ou nome de utilizador
-      // Se 2+ → idx 0 = email/name, idx 1 = username
-      if (wizTextInputs.length === 1) {
-        const val = await wizTextInputs[0].evaluate(el => el.value || '');
+      for (let ti = 0; ti < wizTextInputs.length; ti++) {
+        const val = await wizTextInputs[ti].evaluate(el => el.value || '');
         if (!val) {
-          await wizTextInputs[0].click({ clickCount: 3 });
-          await wizTextInputs[0].type(deriveUsername(email), { delay: 70 });
-          log(id, '[wizard] 1 text input — preenchido com username');
+          const fill = ti === 0 ? deriveName(email) : deriveUsername(email);
+          await wizTextInputs[ti].click({ clickCount: 3 });
+          await wizTextInputs[ti].type(fill, { delay: 70 });
+          log(id, `[wizard] text[${ti}] preenchido: ${fill.slice(0, 20)}`);
           anyFilled = true;
         }
-      } else if (wizTextInputs.length >= 2) {
-        for (let ti = 0; ti < wizTextInputs.length; ti++) {
-          const val = await wizTextInputs[ti].evaluate(el => el.value || '');
-          if (!val) {
-            const fill = ti === 0 ? deriveName(email) : deriveUsername(email);
-            await wizTextInputs[ti].click({ clickCount: 3 });
-            await wizTextInputs[ti].type(fill, { delay: 70 });
-            log(id, `[wizard] text[${ti}] preenchido: ${fill.slice(0, 20)}`);
-            anyFilled = true;
-          }
+      }
+      if (wizUsernameEl) {
+        const val = await wizUsernameEl.evaluate(el => el.value || '');
+        if (!val) {
+          await wizUsernameEl.click({ clickCount: 3 });
+          await wizUsernameEl.type(deriveUsername(email), { delay: 70 });
+          log(id, '[wizard] username preenchido (aria-label)');
+          anyFilled = true;
         }
       }
       if (wizPassInput) {
