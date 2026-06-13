@@ -323,23 +323,34 @@ async function typeInto(page, selector, value, delay = 70) {
   return true;
 }
 
-// React-compatible: usa setter nativo do HTMLInputElement para disparar onChange do React
+// React-compatible: usa teclado real (Ctrl+A + type) — o mais confiável para inputs React
 async function reactTypeInto(page, el, value) {
-  await el.click({ clickCount: 3 }).catch(() => {});
-  await el.focus().catch(() => {});
-  // Clear via nativeInputValueSetter
-  await page.evaluate((el) => {
-    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-    setter.call(el, '');
-    el.dispatchEvent(new Event('input', { bubbles: true }));
-    el.dispatchEvent(new Event('change', { bubbles: true }));
-  }, el).catch(() => {});
-  await sleep(100);
-  // Type char by char so React state tracks each keystroke
+  // Scroll into view e focar
+  await el.evaluate(e => {
+    e.scrollIntoView({ block: 'center' });
+    e.focus();
+  }).catch(() => {});
+  await sleep(150);
+
+  // Click para garantir foco
+  await el.click().catch(() => {});
+  await sleep(150);
+
+  // Selecionar tudo e apagar
+  await page.keyboard.down('Control');
+  await page.keyboard.press('a');
+  await page.keyboard.up('Control');
+  await sleep(80);
+  await page.keyboard.press('Backspace');
+  await sleep(80);
+
+  // Digitar char por char com delay real (teclado físico simulado)
   for (const char of value) {
-    await el.type(char, { delay: 80 });
-    await sleep(30);
+    await page.keyboard.type(char, { delay: 120 });
+    await sleep(50);
   }
+
+  await sleep(300);
 }
 
 async function clickButton(page, selectors) {
