@@ -119,7 +119,15 @@ async function loginOutlook(jobId, page, email, password, proxyUser, proxyPass) 
 
       if (url.includes('outlook.live.com/mail')) {
         log(jobId, '[outlook] Inbox pronto!');
+        await acceptOutlookCookies(page);
         return;
+      }
+
+      // Aceitar cookies se aparecer antes do inbox
+      if (/optional cookies|we use cookies/i.test(await page.evaluate(() => document.body.innerText || '').catch(() => ''))) {
+        await acceptOutlookCookies(page);
+        await sleep(2000);
+        continue;
       }
 
       if (/account\.live\.com\/(proofs|recover|resproof)/i.test(url)) {
@@ -151,17 +159,37 @@ async function loginOutlook(jobId, page, email, password, proxyUser, proxyPass) 
   log(jobId, `[outlook] Login concluído. URL: ${page.url().split('?')[0]}`);
 }
 
+async function acceptOutlookCookies(page) {
+  // Aceitar cookies se aparecer a página de consent
+  try {
+    const bodyText = await page.evaluate(() => document.body.innerText || '');
+    if (/optional cookies|we use cookies|cookie/i.test(bodyText)) {
+      const btns = await page.$$('button');
+      for (const btn of btns) {
+        const t = await btn.evaluate(el => el.textContent || '');
+        if (/accept all|accept optional|aceitar|allow/i.test(t)) {
+          await btn.click();
+          await sleep(2000);
+          break;
+        }
+      }
+    }
+  } catch {}
+}
+
 async function scanFolder(jobId, page, email, folderUrl, triedCodes = new Set()) {
   const folder = folderUrl.split('/').pop();
   try {
     await page.goto(folderUrl, { waitUntil: 'domcontentloaded', timeout: 40000 });
-    // Aguardar LISTA de emails renderizar (nav carrega em <1s mas lista demora mais)
-    // body.innerText > 200 passa cedo demais (só o cabeçalho do Outlook já tem ~300 chars)
+
+    // Aceitar cookies do Outlook se aparecer
+    await acceptOutlookCookies(page);
+    await sleep(1000);
+
+    // Aguardar LISTA de emails renderizar
     await page.waitForFunction(() => {
       const items = [...document.querySelectorAll('[role="option"],[role="listitem"],[data-convid]')];
-      // Pelo menos 1 item com texto real (assunto/remetente visíveis)
       if (items.length > 0 && items.some(el => (el.innerText || '').trim().length > 20)) return true;
-      // Fallback: body muito longo significa que algum conteúdo de email renderizou
       return (document.body.innerText || '').length > 1200;
     }, { timeout: 28000, polling: 700 }).catch(() => {});
     await sleep(3000);
