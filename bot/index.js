@@ -938,10 +938,34 @@ async function runJob(job) {
           await page.keyboard.type(otp, { delay: 100 });
         }
 
-        await sleep(500);
-        const submitted = await clickButton(page, ['button[type="submit"]', 'button']);
-        if (!submitted) await page.keyboard.press('Enter');
-        await sleep(12000); // proxy pode demorar; 7s era curto demais
+        await sleep(800);
+
+        // Tentar submeter de múltiplas formas
+        // 1. Botão de submit específico
+        let submitted = await clickButton(page, [
+          'button[type="submit"]',
+          'button[class*="confirm" i]',
+          'button[class*="submit" i]',
+        ]);
+        // 2. Enter no campo OTP
+        if (!submitted) {
+          await page.keyboard.press('Enter');
+          submitted = true;
+        }
+        // 3. Clicar qualquer botão visível que não seja "back/cancel"
+        if (!submitted) {
+          const btns = await page.$$('button:not([type="button"])');
+          for (const btn of btns) {
+            const t = await btn.evaluate(el => el.textContent || '');
+            if (!/back|cancel|voltar|cancelar/i.test(t)) {
+              await btn.click();
+              submitted = true;
+              break;
+            }
+          }
+        }
+        log(id, `OTP submetido via: ${submitted ? 'click/enter' : 'fallback'}`);
+        await sleep(15000); // proxy residencial pode ser lento
 
         const postOtpUrl = page.url();
         const postContent = await page.content();
@@ -953,13 +977,14 @@ async function runJob(job) {
 
         const rejected = /invalid|expired|incorrect|inv[aá]lid|expirou|expirad|incorreto/i.test(postContent);
         if (!rejected) {
-          // URL não mudou mas Instagram não rejeitou explicitamente
-          // → pode ser lentidão do proxy ou digitação silenciosa falhou
-          // → retirar do triedCodes para poder re-tentar o mesmo código
+          // URL não mudou mas sem rejeição explícita → pode ser lentidão ou bug de digitação
+          // Liberar o mesmo código para tentar de novo na próxima iteração
           triedCodes.delete(otp);
-          log(id, `OTP ${otp}: URL não mudou, sem rejeição explícita — liberando para nova tentativa`);
+          log(id, `OTP ${otp}: sem rejeição explícita — liberando para retry`);
         } else {
-          log(id, `OTP ${otp} rejeitado pelo Instagram`);
+          log(id, `OTP ${otp} rejeitado explicitamente — aguardando novo código`);
+          // Esperar 30s para um novo código chegar antes de escanear de novo
+          await sleep(30000);
         }
       }
 
