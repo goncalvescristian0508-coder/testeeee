@@ -308,7 +308,6 @@ async function typeInto(page, selector, value, delay = 70) {
   try {
     await el.click({ clickCount: 3 });
   } catch {
-    // Não clicável via Puppeteer — scroll + focus via DOM
     await el.evaluate(e => {
       e.scrollIntoView({ block: 'center' });
       e.focus();
@@ -319,10 +318,28 @@ async function typeInto(page, selector, value, delay = 70) {
   try {
     await el.type(value, { delay });
   } catch {
-    // Se type também falhar, usar teclado direto
     await page.keyboard.type(value, { delay });
   }
   return true;
+}
+
+// React-compatible: usa setter nativo do HTMLInputElement para disparar onChange do React
+async function reactTypeInto(page, el, value) {
+  await el.click({ clickCount: 3 }).catch(() => {});
+  await el.focus().catch(() => {});
+  // Clear via nativeInputValueSetter
+  await page.evaluate((el) => {
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+    setter.call(el, '');
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  }, el).catch(() => {});
+  await sleep(100);
+  // Type char by char so React state tracks each keystroke
+  for (const char of value) {
+    await el.type(char, { delay: 80 });
+    await sleep(30);
+  }
 }
 
 async function clickButton(page, selectors) {
@@ -837,7 +854,14 @@ async function runJob(job) {
 
         log(id, `Inserindo OTP (tentativa ${attempt + 1}): ${otp}`);
 
-        let typed = await typeInto(page, otpSel, otp);
+        // Usar reactTypeInto como método principal (Instagram usa React controlled inputs)
+        const otpEl = await page.$(otpSel);
+        let typed = false;
+        if (otpEl) {
+          await reactTypeInto(page, otpEl, otp);
+          typed = true;
+          log(id, 'OTP inserido via reactTypeInto');
+        }
 
         if (!typed) {
           // Fallback 1: 6 inputs individuais (um por dígito)
