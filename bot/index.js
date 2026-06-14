@@ -937,6 +937,15 @@ async function runJob(job) {
           if (otpHandle) {
             fieldInfo = await otpHandle.evaluate(el => ({ id: el.id, name: el.name, maxLen: el.maxLength, type: el.type })).catch(() => null);
             await reactTypeInto(page, otpHandle, otp);
+            // Forçar React state via native setter (keyboard events às vezes não chegam ao state React)
+            await page.evaluate((val) => {
+              const inp = [...document.querySelectorAll('input')].find(el => el.maxLength === 6 && el.offsetParent !== null);
+              if (!inp) return;
+              const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+              setter.call(inp, val);
+              inp.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: val }));
+              inp.dispatchEvent(new Event('change', { bubbles: true }));
+            }, otp).catch(() => {});
           } else {
             log(id, '[otp] Nenhum input localizado — digitando no foco atual');
             await page.keyboard.type(otp, { delay: 130 });
@@ -954,19 +963,30 @@ async function runJob(job) {
 
         await sleep(800);
 
-        // Submeter: 1) botão por texto, 2) button[type=submit], 3) Enter
+        // Submeter OTP: procurar "Continue" especificamente (não "Submit" do form inicial que ainda está no DOM)
+        // Estratégia: form pai do campo OTP → botão dentro dele → fallback Enter
         const submitHow = await page.evaluate(() => {
+          const otpInp = [...document.querySelectorAll('input')]
+            .find(el => el.maxLength === 6 && el.offsetParent !== null);
+          // 1. Botão dentro do form do campo OTP
+          if (otpInp) {
+            const form = otpInp.closest('form, [role="main"], section, div');
+            if (form) {
+              const formBtn = [...form.querySelectorAll('button, [role="button"]')]
+                .find(b => b.offsetParent !== null && !b.disabled &&
+                  !/back|cancel|voltar|cancelar|didn.t get|i didn/i.test(b.textContent || ''));
+              if (formBtn) { formBtn.click(); return (formBtn.textContent || '').trim().slice(0, 20); }
+            }
+          }
+          // 2. Continue/Confirmar explícito em qualquer lugar
           const btns = [...document.querySelectorAll('button, [role="button"]')];
-          const primary = btns.find(b =>
-            /confirm|next|continue|submit|verificar|confirmar|enviar|próximo|seguinte/i.test(b.textContent || '')
-          );
-          if (primary) { primary.click(); return (primary.textContent || '').trim().slice(0, 20); }
-          const sub = btns.find(b => b.type === 'submit');
-          if (sub) { sub.click(); return 'type=submit'; }
+          const cont = btns.find(b => /^(continue|continuar|confirm|confirmar)$/i.test((b.textContent || '').trim()) && b.offsetParent !== null);
+          if (cont) { cont.click(); return (cont.textContent || '').trim().slice(0, 20); }
           return null;
         }).catch(() => null);
-        if (!submitHow) await page.keyboard.press('Enter');
-        log(id, `[otp] Submit via: ${submitHow || 'Enter'}`);
+        // Sempre pressionar Enter após o click (garante submit mesmo que o click não funcionou)
+        await page.keyboard.press('Enter');
+        log(id, `[otp] Submit via: ${submitHow || '(só Enter)'}`);
         await sleep(15000); // proxy residencial pode ser lento
 
         const postOtpUrl = page.url();
