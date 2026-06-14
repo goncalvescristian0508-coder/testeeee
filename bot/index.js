@@ -603,23 +603,6 @@ async function runJob(job) {
   });
 
   try {
-    // ── Iniciar Outlook em paralelo com o Instagram ──────────────────────────────
-    log(id, '[outlook-early] A iniciar login em paralelo...');
-    const outlookInitPromise = (async () => {
-      const ctx = await browser.createIncognitoBrowserContext();
-      const pg = await ctx.newPage();
-      const triedCodes = new Set();
-      try {
-        await loginOutlook(id, pg, email, emailPassword, proxyUser, proxyPass);
-        // SEM pre-scan — o Instagram pode reenviar o mesmo código de sessões anteriores.
-        // Se pré-escaneamos e adicionamos a triedCodes, o código fresco seria pulado.
-        // O bot tenta cada código encontrado; rejeitados entram em triedCodes na fase OTP.
-        log(id, '[outlook-early] Login concluído, aguardando OTP...');
-      } catch (e) {
-        log(id, `[outlook-early] Erro no pre-scan (continuando): ${e.message}`);
-      }
-      return { ctx, page: pg, triedCodes };
-    })();
 
     // ── Página do Instagram (contexto principal, DESKTOP) ──
     // Desktop UA → Instagram redireciona para /accounts/emailsignup/ com formulário all-in-one.
@@ -884,15 +867,29 @@ async function runJob(job) {
         'input:not([type="hidden"]):not([type="submit"]):not([type="password"]):not([type="search"])',
       ].join(', ');
 
-      // Aguardar Outlook já iniciado em paralelo
-      log(id, '[outlook-early] Aguardando sessão Outlook (pré-scan)...');
-      const { ctx: outlookCtx, page: outlookPage, triedCodes } = await outlookInitPromise;
+      // O otp-helper (PC local) lê o Outlook e envia o código via POST /provide-otp/:id
+      // O VPS apenas aguarda o job.pendingOtp ser preenchido
+      log(id, 'Aguardando OTP do otp-helper (ou submissão manual via painel)...');
+      jobs[id].status = 'waiting_otp';
+      const triedCodes = new Set();
+      const otpDeadline = Date.now() + 300000; // 5 min
 
-      for (let attempt = 0; attempt < 8; attempt++) {
-        log(id, `[otp] Tentativa ${attempt + 1} — ${triedCodes.size} código(s) já tentado(s): ${[...triedCodes].join(',')}`);
-        const otp = await scanForFreshOtp(id, outlookPage, email, triedCodes);
+      while (Date.now() < otpDeadline) {
+        const pending = jobs[id].pendingOtp;
+        if (!pending) { await sleep(2000); continue; }
 
-        log(id, `Inserindo OTP (tentativa ${attempt + 1}): ${otp}`);
+        const otp = String(pending).replace(/\D/g, '');
+        jobs[id].pendingOtp = null;
+        jobs[id].status = 'running';
+
+        if (triedCodes.has(otp)) {
+          log(id, `OTP ${otp} já tentado — ignorando, aguardando novo...`);
+          jobs[id].status = 'waiting_otp';
+          await sleep(2000);
+          continue;
+        }
+        triedCodes.add(otp);
+        log(id, `Inserindo OTP: ${otp}`);
 
         // Recolher todos os inputs visíveis e classificar
         const allVisInputs = [];
@@ -990,30 +987,29 @@ async function runJob(job) {
         await sleep(15000); // proxy residencial pode ser lento
 
         const postOtpUrl = page.url();
-        // Usar innerText (não HTML) para evitar falso positivo com palavras no código JS da página
         const postBodyText = await page.evaluate(() => (document.body.innerText || '').slice(0, 500)).catch(() => '');
-        log(id, `URL após OTP tentativa ${attempt + 1}: ${postOtpUrl.split('/').slice(-2).join('/')}`);
+        log(id, `URL após OTP: ${postOtpUrl.split('/').slice(-2).join('/')}`);
         log(id, `[otp] Resposta Instagram: ${postBodyText.replace(/\n/g,' ').slice(0, 200)}`);
 
         if (!/accounts\/signup|accounts\/emailsignup/i.test(postOtpUrl)) {
-          break;
+          break; // saiu do signup — OTP aceite
         }
 
-        // Verificar rejeição no texto visível (innerText, não HTML completo)
         const rejected = /invalid|expired|incorrect|inv[aá]lid|expirou|expirad|incorreto|código.*errado|wrong.*code|please.*check/i.test(postBodyText);
-        if (!rejected) {
-          triedCodes.delete(otp);
-          log(id, `OTP ${otp}: sem rejeição explícita — liberando para retry`);
+        if (rejected) {
+          log(id, `OTP ${otp} rejeitado explicitamente — aguardando novo código...`);
         } else {
-          log(id, `OTP ${otp} rejeitado explicitamente. Texto: "${postBodyText.slice(0, 100)}"`);
-          await sleep(30000); // aguardar novo código antes de escanear
+          log(id, `OTP ${otp}: sem rejeição explícita — aguardando novo código ou retry`);
         }
+        jobs[id].status = 'waiting_otp';
+        await sleep(2000);
       }
 
-      log(id, `URL final pós-OTP: ${page.url()}`);
-      await outlookCtx.close().catch(() => {});
-    } else {
-      outlookInitPromise.then(({ ctx }) => ctx && ctx.close().catch(() => {})).catch(() => {});
+      if (!/accounts\/signup|accounts\/emailsignup/i.test(page.url())) {
+        log(id, `OTP aceite! URL: ${page.url()}`);
+      } else {
+        throw new Error('Timeout a aguardar OTP do otp-helper');
+      }
     }
 
     // ── Passos pós-OTP (username, termos, etc.) ──────────────────────────────
@@ -1116,6 +1112,19 @@ app.post('/create-account', authMiddleware, (req, res) => {
   jobs[id] = job;
   runJob(job).catch(console.error);
   res.json({ jobId: id, statusUrl: `/status/${id}` });
+});
+
+// Endpoint chamado pelo otp-helper (PC local) para entregar o código ao job
+app.post('/provide-otp/:id', authMiddleware, (req, res) => {
+  const job = jobs[req.params.id];
+  if (!job) return res.status(404).json({ error: 'Job não encontrado' });
+
+  const clean = String(req.body.code || '').replace(/\D/g, '');
+  if (clean.length !== 6) return res.status(400).json({ error: 'Código inválido — deve ter 6 dígitos' });
+
+  job.pendingOtp = clean;
+  log(req.params.id, `OTP recebido do otp-helper: ${clean}`);
+  res.json({ ok: true, jobId: req.params.id, code: clean });
 });
 
 // Submissão manual de código (painel admin / fallback)
