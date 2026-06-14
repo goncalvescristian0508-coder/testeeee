@@ -604,11 +604,12 @@ async function runJob(job) {
     args.push('--proxy-bypass-list=*.live.com,*.microsoft.com,*.hotmail.com,*.outlook.com,*.microsoftonline.com');
   }
 
+  const HEADLESS = process.env.HEADLESS !== 'false';
   const browser = await puppeteerExtra.launch({
-    headless: true,
+    headless: HEADLESS,
     args,
     executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
-    defaultViewport: { width: 1280, height: 800 }, // desktop — Instagram mobile bloqueia headless
+    defaultViewport: HEADLESS ? { width: 1280, height: 800 } : null, // desktop — Instagram mobile bloqueia headless
   });
 
   try {
