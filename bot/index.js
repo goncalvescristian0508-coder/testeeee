@@ -893,98 +893,99 @@ async function runJob(job) {
 
         log(id, `Inserindo OTP (tentativa ${attempt + 1}): ${otp}`);
 
-        // Usar reactTypeInto como método principal (Instagram usa React controlled inputs)
-        const otpEl = await page.$(otpSel);
-        let typed = false;
-        if (otpEl) {
-          await reactTypeInto(page, otpEl, otp);
-          typed = true;
-          log(id, 'OTP inserido via reactTypeInto');
+        // Recolher todos os inputs visíveis e classificar
+        const allVisInputs = [];
+        for (const h of await page.$$('input:not([type="hidden"]):not([type="submit"])')) {
+          const info = await h.evaluate(el => ({
+            ml: el.maxLength, vis: el.offsetParent !== null && !el.disabled,
+            type: el.type, name: el.name, id: el.id, ac: el.autocomplete,
+          })).catch(() => null);
+          if (info?.vis) allVisInputs.push({ h, info });
         }
+        log(id, `[otp] Inputs visíveis: ${allVisInputs.map(x => `${x.info.type}[ml=${x.info.ml},name=${x.info.name},ac=${x.info.ac}]`).join(' | ')}`);
 
-        if (!typed) {
-          // Fallback 1: 6 inputs individuais (um por dígito)
-          const digitInputs = await page.$$('input[maxlength="1"]');
-          if (digitInputs.length >= 6) {
-            log(id, `OTP via ${digitInputs.length} campos individuais`);
-            for (let di = 0; di < 6 && di < otp.length; di++) {
-              await digitInputs[di].click({ clickCount: 3 });
-              await digitInputs[di].type(otp[di], { delay: 80 });
-            }
-            typed = true;
+        // Instagram usa ora 6 caixas individuais (maxLength=1) ora 1 campo único (maxLength=6)
+        const sixBox = allVisInputs.filter(x => x.info.ml === 1);
+        let fieldInfo = null;
+
+        if (sixBox.length >= 6) {
+          // Modo 6 caixas: clicar na primeira e digitar dígito a dígito
+          log(id, `[otp] Modo 6-caixas detectado`);
+          fieldInfo = { mode: '6-box', count: sixBox.length };
+          await sixBox[0].h.click();
+          await sleep(250);
+          for (let ci = 0; ci < otp.length; ci++) {
+            await page.keyboard.type(otp[ci], { delay: 120 });
+            await sleep(80);
+          }
+        } else {
+          // Modo campo único: localizar por atributos semânticos → maxLength=6 → fallback
+          let otpHandle = await page.$([
+            'input[autocomplete="one-time-code"]',
+            'input[name="confirmationCode"]',
+            'input[name="verificationCode"]',
+            'input[name="security_code"]',
+          ].join(', ')).catch(() => null);
+
+          if (!otpHandle) {
+            const found = allVisInputs.find(x => x.info.ml === 6);
+            if (found) otpHandle = found.h;
+          }
+          if (!otpHandle && allVisInputs.length > 0) otpHandle = allVisInputs[0].h;
+
+          if (otpHandle) {
+            fieldInfo = await otpHandle.evaluate(el => ({ id: el.id, name: el.name, maxLen: el.maxLength, type: el.type })).catch(() => null);
+            await reactTypeInto(page, otpHandle, otp);
+          } else {
+            log(id, '[otp] Nenhum input localizado — digitando no foco atual');
+            await page.keyboard.type(otp, { delay: 130 });
           }
         }
 
-        if (!typed) {
-          // Fallback 2: qualquer input com name/id ou maxLen=6
-          for (const inp of await page.$$('input[type="text"], input[type="tel"], input[type="number"], input:not([type="hidden"])')) {
-            const info = await inp.evaluate(el => ({ maxLen: el.maxLength, name: el.name, id: el.id }));
-            if (info.maxLen === 6 || /code|verification|confirm/i.test(info.name + info.id)) {
-              await inp.click({ clickCount: 3 });
-              await inp.type(otp, { delay: 100 });
-              log(id, `OTP via fallback2 (name=${info.name} id=${info.id})`);
-              typed = true;
-              break;
-            }
-          }
-        }
+        const fieldVal = await page.evaluate(() => {
+          const inp = [...document.querySelectorAll('input')]
+            .find(el => (el.maxLength === 6 || el.maxLength === 1) && el.offsetParent !== null);
+          return inp ? inp.value : '';
+        }).catch(() => '');
+        log(id, `[otp] Campo: ${JSON.stringify(fieldInfo)} | Valor: "${fieldVal}"`);
 
-        if (!typed) {
-          log(id, 'OTP via keyboard.type (fallback3)');
-          await page.evaluate(() => {
-            const inp = document.querySelector('input:not([type="hidden"]):not([type="submit"])');
-            if (inp) inp.focus();
-          });
-          await page.keyboard.type(otp, { delay: 100 });
-        }
+        await sleep(600);
 
         await sleep(800);
 
-        // Tentar submeter de múltiplas formas
-        // 1. Botão de submit específico
-        let submitted = await clickButton(page, [
-          'button[type="submit"]',
-          'button[class*="confirm" i]',
-          'button[class*="submit" i]',
-        ]);
-        // 2. Enter no campo OTP
-        if (!submitted) {
-          await page.keyboard.press('Enter');
-          submitted = true;
-        }
-        // 3. Clicar qualquer botão visível que não seja "back/cancel"
-        if (!submitted) {
-          const btns = await page.$$('button:not([type="button"])');
-          for (const btn of btns) {
-            const t = await btn.evaluate(el => el.textContent || '');
-            if (!/back|cancel|voltar|cancelar/i.test(t)) {
-              await btn.click();
-              submitted = true;
-              break;
-            }
-          }
-        }
-        log(id, `OTP submetido via: ${submitted ? 'click/enter' : 'fallback'}`);
+        // Submeter: 1) botão por texto, 2) button[type=submit], 3) Enter
+        const submitHow = await page.evaluate(() => {
+          const btns = [...document.querySelectorAll('button, [role="button"]')];
+          const primary = btns.find(b =>
+            /confirm|next|continue|submit|verificar|confirmar|enviar|próximo|seguinte/i.test(b.textContent || '')
+          );
+          if (primary) { primary.click(); return (primary.textContent || '').trim().slice(0, 20); }
+          const sub = btns.find(b => b.type === 'submit');
+          if (sub) { sub.click(); return 'type=submit'; }
+          return null;
+        }).catch(() => null);
+        if (!submitHow) await page.keyboard.press('Enter');
+        log(id, `[otp] Submit via: ${submitHow || 'Enter'}`);
         await sleep(15000); // proxy residencial pode ser lento
 
         const postOtpUrl = page.url();
-        const postContent = await page.content();
-        log(id, `URL após OTP tentativa ${attempt + 1}: ${postOtpUrl}`);
+        // Usar innerText (não HTML) para evitar falso positivo com palavras no código JS da página
+        const postBodyText = await page.evaluate(() => (document.body.innerText || '').slice(0, 500)).catch(() => '');
+        log(id, `URL após OTP tentativa ${attempt + 1}: ${postOtpUrl.split('/').slice(-2).join('/')}`);
+        log(id, `[otp] Resposta Instagram: ${postBodyText.replace(/\n/g,' ').slice(0, 200)}`);
 
         if (!/accounts\/signup|accounts\/emailsignup/i.test(postOtpUrl)) {
           break;
         }
 
-        const rejected = /invalid|expired|incorrect|inv[aá]lid|expirou|expirad|incorreto/i.test(postContent);
+        // Verificar rejeição no texto visível (innerText, não HTML completo)
+        const rejected = /invalid|expired|incorrect|inv[aá]lid|expirou|expirad|incorreto|código.*errado|wrong.*code|please.*check/i.test(postBodyText);
         if (!rejected) {
-          // URL não mudou mas sem rejeição explícita → pode ser lentidão ou bug de digitação
-          // Liberar o mesmo código para tentar de novo na próxima iteração
           triedCodes.delete(otp);
           log(id, `OTP ${otp}: sem rejeição explícita — liberando para retry`);
         } else {
-          log(id, `OTP ${otp} rejeitado explicitamente — aguardando novo código`);
-          // Esperar 30s para um novo código chegar antes de escanear de novo
-          await sleep(30000);
+          log(id, `OTP ${otp} rejeitado explicitamente. Texto: "${postBodyText.slice(0, 100)}"`);
+          await sleep(30000); // aguardar novo código antes de escanear
         }
       }
 
