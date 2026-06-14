@@ -445,6 +445,15 @@ function _getIdentity(email) {
 function deriveName(email)     { return _getIdentity(email).name; }
 function deriveUsername(email) { return _getIdentity(email).username; }
 
+function refreshUsername(email) {
+  const first = _pick(_FIRST);
+  const last  = _pick(_LAST);
+  const user  = (first + last).toLowerCase().replace(/[^a-z]/g, '') + Math.floor(1000 + Math.random() * 8999);
+  const id    = _identities.get(email) || {};
+  _identities.set(email, { name: id.name || `${first} ${last}`, username: user.slice(0, 28) });
+  return user.slice(0, 28);
+}
+
 async function handleBirthday(jobId, page) {
   try {
     // Instagram desktop: birthday usa DIV[role="combobox"] — não é <select> nativo
@@ -730,6 +739,22 @@ async function runJob(job) {
     // Aguardar check de disponibilidade do username (API call assíncrono do Instagram ~2-3s)
     await sleep(3500);
 
+    // Verificar e resolver username indisponível antes de submeter
+    for (let uAttempt = 0; uAttempt < 5; uAttempt++) {
+      const preBody = await page.evaluate(() => document.body.innerText || '').catch(() => '');
+      if (!/not available|não está disponível|username.*taken/i.test(preBody)) break;
+      const newU = refreshUsername(email);
+      log(id, `[pre-submit] Username indisponível — novo: ${newU}`);
+      const uEl = await page.$('input[aria-label*="Username" i], input[aria-label*="nome de usu" i], input[aria-label*="usuário" i]').catch(() => null);
+      if (uEl) {
+        await uEl.click({ clickCount: 3 });
+        await page.keyboard.down('Control'); await page.keyboard.press('a'); await page.keyboard.up('Control');
+        await page.keyboard.press('Backspace');
+        await uEl.type(newU, { delay: 70 });
+      }
+      await sleep(3500);
+    }
+
     log(id, 'Submetendo formulário...');
 
     // Método 1: click no botão
@@ -820,12 +845,25 @@ async function runJob(job) {
       }
       if (wizUsernameEl) {
         try {
-          const val = await wizUsernameEl.evaluate(el => el.value || '');
-          if (!val) {
+          // If current username is taken, force regenerate before filling
+          const userUnavailable = /not available|já foi usado|username.*taken|usuário.*indisponível|nome de usu.{0,15}n.o est/i.test(wizBody);
+          if (userUnavailable) {
+            const newU = refreshUsername(email);
+            log(id, `[wizard] Username indisponível — regenerando: ${newU}`);
             await wizUsernameEl.click({ clickCount: 3 });
-            await wizUsernameEl.type(deriveUsername(email), { delay: 70 });
-            log(id, '[wizard] username preenchido (aria-label)');
+            await page.keyboard.down('Control'); await page.keyboard.press('a'); await page.keyboard.up('Control');
+            await page.keyboard.press('Backspace');
+            await wizUsernameEl.type(newU, { delay: 70 });
             anyFilled = true;
+            await sleep(3500); // aguardar check de disponibilidade
+          } else {
+            const val = await wizUsernameEl.evaluate(el => el.value || '');
+            if (!val) {
+              await wizUsernameEl.click({ clickCount: 3 });
+              await wizUsernameEl.type(deriveUsername(email), { delay: 70 });
+              log(id, '[wizard] username preenchido (aria-label)');
+              anyFilled = true;
+            }
           }
         } catch (e) { log(id, `[wizard] username skip: ${e.message.slice(0,40)}`); }
       }
@@ -1012,7 +1050,14 @@ async function runJob(job) {
       }
     }
 
-    // ── Passos pós-OTP (username, termos, etc.) ──────────────────────────────
+    // ── Passos pós-OTP (username, termos, etc.) — só executar se OTP foi aceite ──
+    if (!otpDetected) {
+      // Sem OTP: verificar se saiu do signup
+      const nonOtpUrl = page.url();
+      if (/accounts\/signup|accounts\/emailsignup/i.test(nonOtpUrl)) {
+        throw new Error(`Formulário não progrediu (URL: ${nonOtpUrl.split('/').pop()}) — possível bloqueio ou captcha`);
+      }
+    }
     for (let i = 0; i < 8; i++) {
       const stepUrl = page.url();
       if (!/accounts\/signup|accounts\/emailsignup/i.test(stepUrl)) break;
