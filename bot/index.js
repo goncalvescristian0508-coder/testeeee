@@ -591,7 +591,8 @@ async function runJob(job) {
   ];
   if (!noProxy) {
     args.push('--proxy-server=http://gw.dataimpulse.com:823');
-    // Sem bypass — Outlook também passa pelo proxy residencial (evita bloqueio do IP do datacenter)
+    // Outlook vai pelo IP direto do VPS (proxy residencial redireciona para página de marketing da Microsoft)
+    args.push('--proxy-bypass-list=*.live.com,*.microsoft.com,*.hotmail.com,*.outlook.com,*.microsoftonline.com');
   }
 
   const browser = await puppeteerExtra.launch({
