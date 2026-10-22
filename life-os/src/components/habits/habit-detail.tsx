@@ -17,7 +17,7 @@ import { HabitHeatmap } from "./habit-heatmap";
 import { HabitFormDialog } from "./habit-form";
 import { HabitCheck } from "./habit-check";
 import { clearCompletion, deleteHabit, setCompletion, setHabitStatus } from "@/lib/actions/habits";
-import { iconFor } from "@/lib/icons";
+import { HabitIcon } from "./habit-icon";
 import { fmtDate, normalizeTime, WEEKDAY_LABELS } from "@/lib/dates";
 import { dayStatus } from "@/lib/habits";
 import type { HabitWithState } from "@/lib/data/habits";
@@ -33,7 +33,6 @@ export function HabitDetail({ item, categories, today }: { item: HabitWithState;
   const [dayValue, setDayValue] = useState("");
   const [pending, start] = useTransition();
   const { habit, streak, weekRate, monthRate, currentSchedule, schedules, completions } = item;
-  const Icon = iconFor(habit.icon);
 
   const status = (s: "active" | "paused" | "archived") =>
     start(async () => {
@@ -73,7 +72,7 @@ export function HabitDetail({ item, categories, today }: { item: HabitWithState;
     <div className="space-y-6">
       <div className="flex items-start gap-4">
         <span className="flex size-14 shrink-0 items-center justify-center rounded-2xl" style={{ backgroundColor: habit.color + "22", color: habit.color }}>
-          <Icon className="size-7" />
+          <HabitIcon name={habit.icon} className="size-7" />
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">

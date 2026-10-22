@@ -1,3 +1,5 @@
+> **Life OS** — o aplicativo pessoal de rotina, hábitos, sono e foco fica em [`life-os/`](life-os/README.md), com instruções próprias de instalação, Supabase e Vercel.
+
 # Instagram Account Creator
 
 Dois componentes:

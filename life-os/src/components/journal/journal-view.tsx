@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { BookOpen, Save, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -23,26 +23,6 @@ export function JournalView({ entries, selected, date, today, query }: { entries
   const router = useRouter();
   const params = useSearchParams();
   const [q, setQ] = useState(query);
-  const [content, setContent] = useState("");
-  const [mood, setMood] = useState("");
-  const [energy, setEnergy] = useState("");
-  const [good, setGood] = useState("");
-  const [improve, setImprove] = useState("");
-  const [learn, setLearn] = useState("");
-  const [tomorrow, setTomorrow] = useState("");
-  const [pending, start] = useTransition();
-  const [dirty, setDirty] = useState(false);
-
-  useEffect(() => {
-    setContent(selected?.content ?? "");
-    setMood(selected?.mood ? String(selected.mood) : "");
-    setEnergy(selected?.energy ? String(selected.energy) : "");
-    setGood(selected?.good_things ?? "");
-    setImprove(selected?.improve ?? "");
-    setLearn(selected?.learnings ?? "");
-    setTomorrow(selected?.tomorrow_priorities ?? "");
-    setDirty(false);
-  }, [selected, date]);
 
   const go = (next: { date?: string; q?: string }) => {
     const p = new URLSearchParams(params.toString());
@@ -53,6 +33,47 @@ export function JournalView({ entries, selected, date, today, query }: { entries
     }
     router.replace(`/diario?${p.toString()}`, { scroll: false });
   };
+
+  return (
+    <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
+      <JournalEditor key={`${date}:${selected?.updated_at ?? "new"}`} selected={selected} date={date} today={today} onChangeDate={(d) => go({ date: d })} />
+      <aside className="space-y-3">
+        <form onSubmit={(e) => { e.preventDefault(); go({ q }); }} className="flex gap-2">
+          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Pesquisar no histórico" aria-label="Pesquisar" />
+          <Button type="submit" variant="outline" size="icon" aria-label="Buscar"><Search /></Button>
+        </form>
+        {query ? <p className="text-xs text-muted-foreground">{entries.length} resultado{entries.length !== 1 ? "s" : ""} para “{query}” · <button type="button" className="underline" onClick={() => { setQ(""); go({ q: "" }); }}>limpar</button></p> : null}
+        {entries.length === 0 ? <EmptyState icon={<BookOpen />} title={query ? "Nada encontrado" : "Nenhuma entrada ainda"} description={query ? "Tente outras palavras." : "Suas reflexões diárias ficam aqui."} /> : (
+          <ul className="space-y-1.5">
+            {entries.map((e) => (
+              <li key={e.id}>
+                <button type="button" onClick={() => go({ date: e.date })} className={cn("w-full rounded-xl border border-border bg-card px-3 py-2 text-left transition-colors hover:bg-accent/50", e.date === date && "border-success/40")}>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-medium">{fmtDate(e.date, "EEE, d MMM")}</span>
+                    <span className="flex gap-1">{e.mood ? <span>{MOOD[e.mood - 1]}</span> : null}{e.energy ? <Badge variant="muted">{ENERGY[e.energy - 1]}</Badge> : null}</span>
+                  </div>
+                  <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{e.content || e.good_things || e.learnings || e.improve || "—"}</p>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </aside>
+    </div>
+  );
+}
+
+/** Editor com estado próprio; a `key` (data + versão) reinicia o formulário ao trocar de dia. */
+function JournalEditor({ selected, date, today, onChangeDate }: { selected: JournalEntryRow | null; date: string; today: string; onChangeDate: (d: string) => void }) {
+  const [content, setContent] = useState(selected?.content ?? "");
+  const [mood, setMood] = useState(selected?.mood ? String(selected.mood) : "");
+  const [energy, setEnergy] = useState(selected?.energy ? String(selected.energy) : "");
+  const [good, setGood] = useState(selected?.good_things ?? "");
+  const [improve, setImprove] = useState(selected?.improve ?? "");
+  const [learn, setLearn] = useState(selected?.learnings ?? "");
+  const [tomorrow, setTomorrow] = useState(selected?.tomorrow_priorities ?? "");
+  const [pending, start] = useTransition();
+  const [dirty, setDirty] = useState(false);
 
   const save = () =>
     start(async () => {
@@ -77,7 +98,6 @@ export function JournalView({ entries, selected, date, today, query }: { entries
   const mark = <T,>(set: (v: T) => void) => (v: T) => { set(v); setDirty(true); };
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
       <section className="space-y-4 rounded-2xl border border-border bg-card p-5">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
@@ -85,7 +105,7 @@ export function JournalView({ entries, selected, date, today, query }: { entries
             <p className="text-xs text-muted-foreground">{selected ? "Editando entrada existente" : "Nova entrada"}{dirty ? " · alterações não salvas" : ""}</p>
           </div>
           <div className="flex items-center gap-2">
-            <Input type="date" value={date} max={today} onChange={(e) => e.target.value && go({ date: e.target.value })} className="w-40" aria-label="Data da entrada" />
+            <Input type="date" value={date} max={today} onChange={(e) => e.target.value && onChangeDate(e.target.value)} className="w-40" aria-label="Data da entrada" />
             {selected ? <Button variant="ghost" size="icon" aria-label="Excluir entrada" onClick={remove} disabled={pending}><Trash2 /></Button> : null}
           </div>
         </div>
@@ -109,28 +129,5 @@ export function JournalView({ entries, selected, date, today, query }: { entries
         <div className="flex justify-end"><Button onClick={save} loading={pending}><Save /> Salvar</Button></div>
       </section>
 
-      <aside className="space-y-3">
-        <form onSubmit={(e) => { e.preventDefault(); go({ q }); }} className="flex gap-2">
-          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Pesquisar no histórico" aria-label="Pesquisar" />
-          <Button type="submit" variant="outline" size="icon" aria-label="Buscar"><Search /></Button>
-        </form>
-        {query ? <p className="text-xs text-muted-foreground">{entries.length} resultado{entries.length !== 1 ? "s" : ""} para “{query}” · <button type="button" className="underline" onClick={() => { setQ(""); go({ q: "" }); }}>limpar</button></p> : null}
-        {entries.length === 0 ? <EmptyState icon={<BookOpen />} title={query ? "Nada encontrado" : "Nenhuma entrada ainda"} description={query ? "Tente outras palavras." : "Suas reflexões diárias ficam aqui."} /> : (
-          <ul className="space-y-1.5">
-            {entries.map((e) => (
-              <li key={e.id}>
-                <button type="button" onClick={() => go({ date: e.date })} className={cn("w-full rounded-xl border border-border bg-card px-3 py-2 text-left transition-colors hover:bg-accent/50", e.date === date && "border-success/40")}>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm font-medium">{fmtDate(e.date, "EEE, d MMM")}</span>
-                    <span className="flex gap-1">{e.mood ? <span>{MOOD[e.mood - 1]}</span> : null}{e.energy ? <Badge variant="muted">{ENERGY[e.energy - 1]}</Badge> : null}</span>
-                  </div>
-                  <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{e.content || e.good_things || e.learnings || e.improve || "—"}</p>
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </aside>
-    </div>
   );
 }

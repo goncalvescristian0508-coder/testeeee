@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { ArrowDown, ArrowUp, GripVertical, ListChecks, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -36,20 +36,14 @@ export function HabitsView({ items, categories, today, periods }: Props) {
   const avgWeek = active.length ? Math.round(active.reduce((a, i) => a + i.weekRate, 0) / active.length) : 0;
   const bestStreak = Math.max(0, ...active.map((i) => i.streak.current));
 
-  const ordered = useMemo(() => {
-    if (!order) return active;
-    const map = new Map(active.map((i) => [i.habit.id, i]));
-    return order.map((id) => map.get(id)!).filter(Boolean);
-  }, [active, order]);
+  const activeMap = new Map(active.map((i) => [i.habit.id, i]));
+  const ordered = order ? order.map((id) => activeMap.get(id)).filter((i): i is HabitWithState => !!i) : active;
 
-  const byPeriod = useMemo(() => {
-    const groups: Record<"morning" | "afternoon" | "evening" | "any", HabitWithState[]> = { morning: [], afternoon: [], evening: [], any: [] };
-    for (const i of scheduledToday) {
-      const p = i.habit.period ?? (i.habit.recommended_time ? periodOfTime(i.habit.recommended_time, periods) : null);
-      groups[p ?? "any"].push(i);
-    }
-    return groups;
-  }, [scheduledToday, periods]);
+  const byPeriod: Record<"morning" | "afternoon" | "evening" | "any", HabitWithState[]> = { morning: [], afternoon: [], evening: [], any: [] };
+  for (const i of scheduledToday) {
+    const p = i.habit.period ?? (i.habit.recommended_time ? periodOfTime(i.habit.recommended_time, periods) : null);
+    byPeriod[p ?? "any"].push(i);
+  }
 
   const move = (id: string, dir: -1 | 1) => {
     const ids = (order ?? active.map((i) => i.habit.id)).slice();

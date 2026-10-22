@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { Flame } from "lucide-react";
-import { iconFor } from "@/lib/icons";
+import { HabitIcon } from "./habit-icon";
 import { cn } from "@/lib/utils";
 import { HabitCheck } from "./habit-check";
 import type { HabitWithState } from "@/lib/data/habits";
@@ -17,7 +17,6 @@ interface HabitRowProps {
 
 export function HabitRowItem({ item, today, compact, dragHandle }: HabitRowProps) {
   const { habit, todayStatus, todayCompletion, streak, currentSchedule, weeklyDone } = item;
-  const Icon = iconFor(habit.icon);
   const notScheduled = todayStatus === "not_scheduled";
   const done = todayStatus === "done";
   const tpw = currentSchedule?.frequency === "times_per_week" ? currentSchedule.times_per_week ?? 0 : 0;
@@ -27,7 +26,7 @@ export function HabitRowItem({ item, today, compact, dragHandle }: HabitRowProps
       {dragHandle}
       <Link href={`/habitos/${habit.id}`} className="flex min-w-0 flex-1 items-center gap-3">
         <span className="flex size-9 shrink-0 items-center justify-center rounded-lg" style={{ backgroundColor: habit.color + "22", color: habit.color }}>
-          <Icon className="size-4" />
+          <HabitIcon name={habit.icon} className="size-4" />
         </span>
         <span className="min-w-0 flex-1">
           <span className={cn("block truncate text-sm font-medium", done && "line-through decoration-success/60 text-muted-foreground")}>{habit.name}</span>

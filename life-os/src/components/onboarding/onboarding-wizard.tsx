@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { completeOnboarding, skipOnboarding } from "@/lib/actions/onboarding";
 import { EXAMPLE_ROUTINE, type ExampleHabit } from "@/lib/onboarding/example-routine";
-import { iconFor } from "@/lib/icons";
+import { HabitIcon } from "@/components/habits/habit-icon";
 import { PERIOD_LABEL } from "@/lib/dates";
 import { cn } from "@/lib/utils";
 
@@ -109,11 +109,10 @@ export function OnboardingWizard({ initialName }: { initialName: string }) {
             <div key={p} className="space-y-2">
               <h2 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{PERIOD_LABEL[p]}</h2>
               {rows.filter((r) => r.period === p).map((r) => {
-                const Icon = iconFor(r.icon);
                 return (
                   <div key={r.key} className={cn("flex items-center gap-3 rounded-xl border border-border px-3 py-2", !r.enabled && "opacity-50")}>
                     <Checkbox checked={r.enabled} onCheckedChange={(c) => update(r.key, { enabled: c === true })} aria-label={`Incluir ${r.name}`} />
-                    <span className="flex size-8 shrink-0 items-center justify-center rounded-lg" style={{ backgroundColor: r.color + "22", color: r.color }}><Icon className="size-4" /></span>
+                    <span className="flex size-8 shrink-0 items-center justify-center rounded-lg" style={{ backgroundColor: r.color + "22", color: r.color }}><HabitIcon name={r.icon} className="size-4" /></span>
                     <Input value={r.name} onChange={(e) => update(r.key, { name: e.target.value })} className="h-9 flex-1" aria-label="Nome do hábito" />
                     <Input type="time" value={r.time} onChange={(e) => update(r.key, { time: e.target.value })} className="h-9 w-28" aria-label="Horário" />
                   </div>

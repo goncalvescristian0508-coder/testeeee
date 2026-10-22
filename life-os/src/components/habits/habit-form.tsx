@@ -14,7 +14,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { createHabit, updateHabit, habitSchema, type HabitInput } from "@/lib/actions/habits";
-import { ICON_NAMES, COLORS, iconFor } from "@/lib/icons";
+import { ICON_NAMES, COLORS } from "@/lib/icons";
+import { HabitIcon } from "./habit-icon";
 import { WEEKDAY_LABELS } from "@/lib/dates";
 import { cn } from "@/lib/utils";
 import type { CategoryRow, HabitRow, HabitScheduleRow } from "@/lib/database.types";
@@ -103,8 +104,6 @@ export function HabitFormDialog({ open, onOpenChange, habit, schedule, categorie
     });
   });
 
-  const Icon = iconFor(icon);
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-xl">
@@ -115,7 +114,7 @@ export function HabitFormDialog({ open, onOpenChange, habit, schedule, categorie
         <form onSubmit={submit} className="space-y-5" noValidate>
           <div className="flex items-start gap-3">
             <div className="flex size-12 shrink-0 items-center justify-center rounded-xl" style={{ backgroundColor: color + "22", color }}>
-              <Icon className="size-6" />
+              <HabitIcon name={icon} className="size-6" />
             </div>
             <div className="flex-1 space-y-2">
               <Label htmlFor="h-name">Nome</Label>
@@ -128,7 +127,6 @@ export function HabitFormDialog({ open, onOpenChange, habit, schedule, categorie
             <Label>Ícone</Label>
             <div className="flex flex-wrap gap-1.5">
               {ICON_NAMES.map((n) => {
-                const I = iconFor(n);
                 return (
                   <button
                     key={n}
@@ -138,7 +136,7 @@ export function HabitFormDialog({ open, onOpenChange, habit, schedule, categorie
                     onClick={() => form.setValue("icon", n)}
                     className={cn("flex size-9 items-center justify-center rounded-lg border border-border transition-colors hover:bg-accent", icon === n && "border-success bg-success/15 text-success")}
                   >
-                    <I className="size-4" />
+                    <HabitIcon name={n} className="size-4" />
                   </button>
                 );
               })}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { Info, Pencil, Plus, Smartphone, Target, Trash2, TrendingDown, TrendingUp } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -150,19 +150,27 @@ export function ScreenTimeView({ logs, goals, today, socialFreeMinutes7d }: Prop
 }
 
 function ScreenTimeLogDialog({ open, onOpenChange, log, today }: { open: boolean; onOpenChange: (o: boolean) => void; log: ScreenTimeLogRow | null; today: string }) {
-  const [date, setDate] = useState(today);
-  const [values, setValues] = useState<Record<string, string>>({});
-  const [conscious, setConscious] = useState(false);
-  const [notes, setNotes] = useState("");
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Tempo de tela (manual)</DialogTitle>
+          <DialogDescription>Minutos por app. No iPhone: Ajustes › Tempo de Uso › Ver toda a atividade.</DialogDescription>
+        </DialogHeader>
+        <ScreenTimeLogForm log={log} today={today} onDone={() => onOpenChange(false)} />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** Estado inicializado a partir das props; o componente desmonta ao fechar o diálogo. */
+function ScreenTimeLogForm({ log, today, onDone }: { log: ScreenTimeLogRow | null; today: string; onDone: () => void }) {
+  const initial = log ? entriesOf(log) : {};
+  const [date, setDate] = useState(log?.date ?? today);
+  const [values, setValues] = useState<Record<string, string>>(() => Object.fromEntries(APPS.map((a) => [a.key, initial[a.key] ? String(initial[a.key]) : ""])));
+  const [conscious, setConscious] = useState(log?.conscious_use ?? false);
+  const [notes, setNotes] = useState(log?.notes ?? "");
   const [pending, start] = useTransition();
-  useEffect(() => {
-    if (!open) return;
-    const e = log ? entriesOf(log) : {};
-    setDate(log?.date ?? today);
-    setValues(Object.fromEntries(APPS.map((a) => [a.key, e[a.key] ? String(e[a.key]) : ""])));
-    setConscious(log?.conscious_use ?? false);
-    setNotes(log?.notes ?? "");
-  }, [open, log, today]);
   const total = APPS.reduce((a, k) => a + (Number(values[k.key]) || 0), 0);
   const save = () =>
     start(async () => {
@@ -172,41 +180,41 @@ function ScreenTimeLogDialog({ open, onOpenChange, log, today }: { open: boolean
         return;
       }
       toast.success("Tempo de tela registrado.");
-      onOpenChange(false);
+      onDone();
     });
   return (
+    <div className="space-y-4">
+      <div className="space-y-2"><Label htmlFor="st-date">Dia</Label><Input id="st-date" type="date" value={date} max={today} onChange={(e) => setDate(e.target.value)} disabled={!!log} /></div>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        {APPS.map((a) => (
+          <div key={a.key} className="space-y-1"><Label htmlFor={`st-${a.key}`}>{a.label} (min)</Label><Input id={`st-${a.key}`} type="number" inputMode="numeric" min={0} max={1440} value={values[a.key] ?? ""} onChange={(e) => setValues((v) => ({ ...v, [a.key]: e.target.value }))} /></div>
+        ))}
+      </div>
+      <p className="text-sm text-muted-foreground">Total: <span className="font-medium text-foreground">{formatMinutes(total)}</span></p>
+      <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2.5">
+        <div><p className="text-sm font-medium">Uso consciente das redes</p><p className="text-xs text-muted-foreground">Hoje usei com intenção, não no automático.</p></div>
+        <Switch checked={conscious} onCheckedChange={setConscious} />
+      </div>
+      <div className="space-y-2"><Label htmlFor="st-notes">Observações</Label><Textarea id="st-notes" rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} /></div>
+      <div className="flex justify-end gap-2"><Button variant="ghost" onClick={onDone}>Cancelar</Button><Button onClick={save} loading={pending}>Salvar</Button></div>
+    </div>
+  );
+}
+
+function GoalsDialog({ open, onOpenChange, goals }: { open: boolean; onOpenChange: (o: boolean) => void; goals: ScreenTimeGoalRow[] }) {
+  return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Tempo de tela (manual)</DialogTitle>
-          <DialogDescription>Minutos por app. No iPhone: Ajustes › Tempo de Uso › Ver toda a atividade.</DialogDescription>
-        </DialogHeader>
-        <div className="space-y-4">
-          <div className="space-y-2"><Label htmlFor="st-date">Dia</Label><Input id="st-date" type="date" value={date} max={today} onChange={(e) => setDate(e.target.value)} disabled={!!log} /></div>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-            {APPS.map((a) => (
-              <div key={a.key} className="space-y-1"><Label htmlFor={`st-${a.key}`}>{a.label} (min)</Label><Input id={`st-${a.key}`} type="number" inputMode="numeric" min={0} max={1440} value={values[a.key] ?? ""} onChange={(e) => setValues((v) => ({ ...v, [a.key]: e.target.value }))} /></div>
-            ))}
-          </div>
-          <p className="text-sm text-muted-foreground">Total: <span className="font-medium text-foreground">{formatMinutes(total)}</span></p>
-          <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2.5">
-            <div><p className="text-sm font-medium">Uso consciente das redes</p><p className="text-xs text-muted-foreground">Hoje usei com intenção, não no automático.</p></div>
-            <Switch checked={conscious} onCheckedChange={setConscious} />
-          </div>
-          <div className="space-y-2"><Label htmlFor="st-notes">Observações</Label><Textarea id="st-notes" rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} /></div>
-          <div className="flex justify-end gap-2"><Button variant="ghost" onClick={() => onOpenChange(false)}>Cancelar</Button><Button onClick={save} loading={pending}>Salvar</Button></div>
-        </div>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader><DialogTitle>Metas diárias</DialogTitle><DialogDescription>Limite máximo por app, em minutos. Deixe vazio para não definir.</DialogDescription></DialogHeader>
+        <GoalsForm goals={goals} onDone={() => onOpenChange(false)} />
       </DialogContent>
     </Dialog>
   );
 }
 
-function GoalsDialog({ open, onOpenChange, goals }: { open: boolean; onOpenChange: (o: boolean) => void; goals: ScreenTimeGoalRow[] }) {
-  const [values, setValues] = useState<Record<string, string>>({});
+function GoalsForm({ goals, onDone }: { goals: ScreenTimeGoalRow[]; onDone: () => void }) {
+  const [values, setValues] = useState<Record<string, string>>(() => Object.fromEntries([...APPS.map((a) => a.key), "total"].map((k) => [k, String(goals.find((g) => g.app === k)?.max_minutes ?? "")])));
   const [pending, start] = useTransition();
-  useEffect(() => {
-    if (open) setValues(Object.fromEntries([...APPS.map((a) => a.key), "total"].map((k) => [k, String(goals.find((g) => g.app === k)?.max_minutes ?? "")])));
-  }, [open, goals]);
   const save = () =>
     start(async () => {
       const res = await saveScreenTimeGoals(Object.entries(values).map(([app, v]) => ({ app, max_minutes: Number(v) || 0 })));
@@ -215,19 +223,14 @@ function GoalsDialog({ open, onOpenChange, goals }: { open: boolean; onOpenChang
         return;
       }
       toast.success("Metas salvas.");
-      onOpenChange(false);
+      onDone();
     });
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-sm">
-        <DialogHeader><DialogTitle>Metas diárias</DialogTitle><DialogDescription>Limite máximo por app, em minutos. Deixe vazio para não definir.</DialogDescription></DialogHeader>
-        <div className="space-y-3">
-          {[...APPS, { key: "total", label: "Total do dia" }].map((a) => (
-            <div key={a.key} className="flex items-center justify-between gap-3"><Label htmlFor={`g-${a.key}`}>{a.label}</Label><Input id={`g-${a.key}`} type="number" min={0} max={1440} className="w-28" value={values[a.key] ?? ""} onChange={(e) => setValues((v) => ({ ...v, [a.key]: e.target.value }))} /></div>
-          ))}
-          <div className="flex justify-end gap-2"><Button variant="ghost" onClick={() => onOpenChange(false)}>Cancelar</Button><Button onClick={save} loading={pending}>Salvar</Button></div>
-        </div>
-      </DialogContent>
-    </Dialog>
+    <div className="space-y-3">
+      {[...APPS, { key: "total", label: "Total do dia" }].map((a) => (
+        <div key={a.key} className="flex items-center justify-between gap-3"><Label htmlFor={`g-${a.key}`}>{a.label}</Label><Input id={`g-${a.key}`} type="number" min={0} max={1440} className="w-28" value={values[a.key] ?? ""} onChange={(e) => setValues((v) => ({ ...v, [a.key]: e.target.value }))} /></div>
+      ))}
+      <div className="flex justify-end gap-2"><Button variant="ghost" onClick={onDone}>Cancelar</Button><Button onClick={save} loading={pending}>Salvar</Button></div>
+    </div>
   );
 }
