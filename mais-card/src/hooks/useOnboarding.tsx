@@ -13,6 +13,7 @@ export type OnboardingData = {
   docFrente: boolean
   docVerso: boolean
   selfie: boolean
+  identidadeSessao: string | null
   identidade: VerificacaoIdentidade | null
   valorGarantia: number
   diaVencimento: number
@@ -30,6 +31,7 @@ const inicial: OnboardingData = {
   docFrente: false,
   docVerso: false,
   selfie: false,
+  identidadeSessao: null,
   identidade: null,
   valorGarantia: 100,
   diaVencimento: 10,

@@ -31,8 +31,8 @@ No desktop o app aparece numa "moldura" de celular com 430px de largura; no celu
 | `/quiz` | Quiz de perfil (4 perguntas) que direciona para o MAIS Card Garantido |
 | `/cadastro` | Abertura de conta: nome, CPF, e-mail, celular, senha e aceite |
 | `/endereco` | Endereço de entrega do cartão, com busca por CEP (ViaCEP) |
-| `/documento` | Captura de documento (RG, CNH ou RNE) pelo provedor de identidade |
-| `/selfie` | Prova de vida pelo provedor de identidade |
+| `/documento` | Captura de documento (RG, CNH ou RNE) com a câmera, enviada ao backend |
+| `/selfie` | Selfie com a câmera, enviada ao backend para comparação e prova de vida |
 | `/garantia` | Caixinha Garantia (valor vira o limite após 7 dias) e escolha do dia de vencimento |
 | `/conta-criada` | Confirmação da conta e do limite liberado |
 
@@ -45,13 +45,23 @@ ativado ou diminui junto. Não há taxa de adesão nem limite acima do valor gua
 de documento e selfie são placeholders de interface; no app real entram câmera e um provedor
 de validação de identidade.
 
-## Verificação de identidade
+## Verificação de identidade (validador próprio)
 
-Documento e prova de vida passam por `src/services/identity.ts` (interface `IdentityProvider`).
-Hoje o `mockIdentityProvider` aprova tudo com um atraso. Em produção, implemente a interface
-chamando o SDK do provedor escolhido (Unico, idwall, Caf, Serpro...): ele abre a câmera, faz a
-captura e a prova de vida, e o app guarda apenas o id da sessão e o status
-(`VerificacaoIdentidade`), enviado em `abrirConta`. O app não processa nem armazena imagens.
+O app captura as imagens e o backend verifica.
+
+- `src/components/CameraCapture.tsx` abre a câmera do aparelho (traseira para documento,
+  frontal para selfie), mostra a moldura, tira a foto e deixa refazer. Sem câmera
+  (permissão negada, desktop, demo hospedada) cai para um input de arquivo que no celular abre
+  a câmera nativa.
+- `src/services/identity.ts` define a interface `IdentityProvider` (abrir sessão, enviar
+  documento, enviar selfie, concluir). `mockIdentityProvider` simula; `createHttpIdentityProvider`
+  envia as imagens em `multipart/form-data` para `VITE_API_URL/identity`. Troque com
+  `VITE_IDENTITY_MODE=http`.
+- O contrato dos endpoints, o que o backend precisa fazer (OCR, comparação facial, prova de vida),
+  bibliotecas abertas sugeridas e as obrigações de LGPD estão em
+  [`docs/API-IDENTIDADE.md`](docs/API-IDENTIDADE.md).
+
+O app guarda só o id da sessão e o resultado (`VerificacaoIdentidade`), enviado em `abrirConta`.
 
 ## Conectando um backend
 
@@ -74,7 +84,7 @@ depósito e de ativação do limite.
 ## Estrutura
 
 - `src/data/mock.ts` — usuário, saldos, cartão, fatura, transações, indicações, banners e atalhos.
-- `src/components/` — `Header`, `CardVirtual`, `BannerCarousel`, `ShortcutGrid`, `BottomNav`, `StatCard`, `Timeline`, `TopBar`, `StepHeader`, `GarantiaCard`, `Skeleton`, `Logo`, `Toast`, `Icons`.
+- `src/components/` — `Header`, `CardVirtual`, `BannerCarousel`, `ShortcutGrid`, `BottomNav`, `StatCard`, `Timeline`, `TopBar`, `StepHeader`, `CameraCapture`, `GarantiaCard`, `Skeleton`, `Logo`, `Toast`, `Icons`.
 - `src/services/` — `types.ts` (modelos), `api.ts` (interface `Api`, `mockApi` e esqueleto `createHttpApi`), `identity.ts` (provedor de identidade) e `cep.ts` (ViaCEP).
 - `src/hooks/` — `useAsync` (dados da API com loading/erro), `useTheme`, `useHideBalance`, `useToast`, `useOnboarding` (estado do cadastro).
 - `src/pages/` — uma pasta por tela.
