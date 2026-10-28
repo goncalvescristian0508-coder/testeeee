@@ -27,12 +27,26 @@ No desktop o app aparece numa "moldura" de celular com 430px de largura; no celu
 | `/transferir` | Pix e transferências (botão central da bottom bar) |
 | `/extrato` | Extrato da Carteira |
 | `/coins` | +Coins e troca de moedas |
+| `/quiz` | Quiz de perfil (4 perguntas) que direciona para o MAIS Card Garantido |
+| `/cadastro` | Abertura de conta: nome, CPF, e-mail, celular, senha e aceite |
+| `/documento` | Envio de documento (RG, CNH ou RNE), frente e verso simulados |
+| `/selfie` | Selfie de confirmação de identidade (simulada) |
+| `/garantia` | Caixinha Garantia: o valor guardado vira o limite, rende e pode ser resgatado |
+| `/conta-criada` | Confirmação da conta e do limite liberado |
+
+## Modelo do cartão garantido
+
+O fluxo segue o modelo de cartão com limite garantido usado por fintechs reguladas: o limite é
+exatamente o valor guardado na Caixinha, o dinheiro continua do cliente, rende e pode ser
+resgatado a qualquer momento (o limite diminui junto). Não há taxa de adesão, prazo mínimo de
+retenção nem limite acima do valor investido. As telas de documento e selfie são placeholders
+de interface; no app real entram câmera e um provedor de validação de identidade.
 
 ## Estrutura
 
 - `src/data/mock.ts` — usuário, saldos, cartão, fatura, transações, indicações, banners e atalhos.
-- `src/components/` — `Header`, `CardVirtual`, `BannerCarousel`, `ShortcutGrid`, `BottomNav`, `StatCard`, `Timeline`, `TopBar`, `Logo`, `Toast`, `Icons`.
-- `src/hooks/` — `useTheme` (tema claro/escuro persistido), `useHideBalance`, `useToast`.
+- `src/components/` — `Header`, `CardVirtual`, `BannerCarousel`, `ShortcutGrid`, `BottomNav`, `StatCard`, `Timeline`, `TopBar`, `StepHeader`, `Logo`, `Toast`, `Icons`.
+- `src/hooks/` — `useTheme` (tema claro/escuro persistido), `useHideBalance`, `useToast`, `useOnboarding` (estado do cadastro).
 - `src/pages/` — uma pasta por tela.
 
 ## Identidade visual

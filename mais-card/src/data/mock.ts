@@ -125,13 +125,13 @@ export const banners = [
   },
   {
     id: 'b3',
-    titulo: 'MAIS Parcela',
-    texto: 'Crédito direto na sua Carteira+ em até 12x, sem burocracia.',
-    rotulo: 'Disponível para você:',
-    valor: 1200,
-    cta: 'Simular agora',
-    to: '/card',
-    variante: 'preto' as const,
+    titulo: 'Limite garantido',
+    texto: 'Guarde na Caixinha Garantia e o valor vira seu limite, rendendo 100% do CDI.',
+    rotulo: 'A partir de:',
+    valor: 25,
+    cta: 'Começar quiz',
+    to: '/quiz',
+    variante: 'amarelo' as const,
   },
 ]
 
@@ -142,3 +142,73 @@ export function formatBRL(value: number) {
 export function formatNumber(value: number) {
   return value.toLocaleString('pt-BR')
 }
+
+/* ---------- Onboarding: quiz, cadastro e Caixinha Garantia ---------- */
+
+export type QuizOption = { id: string; label: string; hint?: string }
+export type QuizQuestion = { id: string; titulo: string; subtitulo?: string; opcoes: QuizOption[] }
+
+export const quizPerguntas: QuizQuestion[] = [
+  {
+    id: 'objetivo',
+    titulo: 'O que você mais quer agora?',
+    opcoes: [
+      { id: 'organizar', label: 'Organizar minhas finanças' },
+      { id: 'construir', label: 'Construir ou recuperar meu crédito' },
+      { id: 'limite', label: 'Ter um cartão com limite garantido' },
+      { id: 'render', label: 'Fazer meu dinheiro render' },
+    ],
+  },
+  {
+    id: 'situacao',
+    titulo: 'Como está seu nome hoje?',
+    subtitulo: 'Isso não muda sua aprovação: no cartão garantido o limite é o seu próprio investimento.',
+    opcoes: [
+      { id: 'limpo', label: 'Sem restrições' },
+      { id: 'negativado', label: 'Com restrição (negativado)' },
+      { id: 'naosei', label: 'Não sei dizer' },
+    ],
+  },
+  {
+    id: 'renda',
+    titulo: 'Qual a sua renda mensal aproximada?',
+    subtitulo: 'Usamos só para sugerir um valor de investimento confortável.',
+    opcoes: [
+      { id: 'ate1500', label: 'Até R$ 1.500' },
+      { id: 'ate3000', label: 'R$ 1.500 a R$ 3.000' },
+      { id: 'ate6000', label: 'R$ 3.000 a R$ 6.000' },
+      { id: 'mais6000', label: 'Acima de R$ 6.000' },
+    ],
+  },
+  {
+    id: 'garantia',
+    titulo: 'Quanto você quer guardar na Caixinha Garantia?',
+    subtitulo: 'O valor vira seu limite e continua rendendo. Você resgata quando quiser.',
+    opcoes: [
+      { id: '25', label: 'R$ 25', hint: 'Limite de R$ 25' },
+      { id: '100', label: 'R$ 100', hint: 'Limite de R$ 100' },
+      { id: '300', label: 'R$ 300', hint: 'Limite de R$ 300' },
+      { id: '500', label: 'R$ 500', hint: 'Limite de R$ 500' },
+    ],
+  },
+]
+
+export const garantia = {
+  valoresSugeridos: [25, 50, 100, 200, 300, 500],
+  minimo: 25,
+  maximo: 5000,
+  rendimento: '100% do CDI',
+  regras: [
+    'Seu limite é exatamente o valor guardado na Caixinha Garantia.',
+    'O dinheiro continua seu e rende 100% do CDI todos os dias úteis.',
+    'Você pode resgatar quando quiser. O limite diminui junto com o resgate.',
+    'Não consultamos restrições de crédito para liberar o cartão garantido.',
+    'Sem taxa de adesão, sem anuidade e sem prazo mínimo.',
+  ],
+}
+
+export const documentosAceitos = [
+  { id: 'rg', label: 'RG', descricao: 'Frente e verso' },
+  { id: 'cnh', label: 'CNH', descricao: 'Física ou digital' },
+  { id: 'rne', label: 'RNE / CRNM', descricao: 'Para estrangeiros' },
+]
