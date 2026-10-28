@@ -1,0 +1,144 @@
+export type CardStatus = 'emitido' | 'producao' | 'enviado' | 'a_caminho' | 'entregue'
+
+export const user = {
+  nome: 'Carlos',
+  nomeCompleto: 'Carlos Silva',
+  nomeCartao: 'JOÃO SILVA',
+  email: 'carlos.silva@email.com',
+  telefone: '(11) 98765-4321',
+  cpf: '***.456.789-**',
+  conta: '0001 / 12345-6',
+  notificacoes: 22,
+}
+
+export const carteira = {
+  saldoDisponivel: 170,
+  emProcessamento: 190,
+  saldoReservado: 0,
+}
+
+export const cartao = {
+  ultimosDigitos: '6718',
+  status: 'producao' as CardStatus,
+  statusLabel: 'Em produção',
+  limiteCompras: 400,
+  utilizado: 42.63,
+  limiteDisponivel: 357.37,
+  limiteBanner: 800,
+  bandeira: 'Mastercard',
+  validade: '10/31',
+}
+
+export const fatura = {
+  melhorDiaCompra: 6,
+  fechamento: '05/11/2026',
+  vencimento: '15/11/2026',
+  valorAtual: 42.63,
+  status: 'Aberta',
+}
+
+export const coins = {
+  saldo: 6300,
+  valorConversao: 0.01,
+}
+
+export const indicacao = {
+  link: 'https://maiscard.app/convite/CARLOS2026',
+  codigo: 'CARLOS2026',
+  recompensaReais: 10,
+  recompensaCoins: 1000,
+  concluidas: 3,
+  pendentes: 2,
+  ganhosReais: 30,
+  ganhosCoins: 3000,
+}
+
+export type Transacao = {
+  id: string
+  descricao: string
+  categoria: string
+  valor: number
+  data: string
+  tipo: 'debito' | 'credito'
+}
+
+export const transacoes: Transacao[] = [
+  { id: 't1', descricao: 'iFood', categoria: 'Alimentação', valor: -32.9, data: '27/10', tipo: 'debito' },
+  { id: 't2', descricao: 'Pix recebido · Ana', categoria: 'Transferência', valor: 150, data: '26/10', tipo: 'credito' },
+  { id: 't3', descricao: 'Spotify', categoria: 'Assinatura', valor: -9.73, data: '25/10', tipo: 'debito' },
+  { id: 't4', descricao: 'Uber', categoria: 'Transporte', valor: -18.4, data: '24/10', tipo: 'debito' },
+  { id: 't5', descricao: 'Adicionar saldo · Pix', categoria: 'Depósito', valor: 200, data: '22/10', tipo: 'credito' },
+]
+
+export type EtapaEntrega = {
+  id: CardStatus
+  titulo: string
+  descricao: string
+  data?: string
+}
+
+export const etapasEntrega: EtapaEntrega[] = [
+  { id: 'emitido', titulo: 'Emitido', descricao: 'Seu MAIS Card foi aprovado e emitido.', data: '20/10/2026' },
+  { id: 'producao', titulo: 'Em produção', descricao: 'Seu cartão está sendo personalizado.', data: '23/10/2026' },
+  { id: 'enviado', titulo: 'Enviado', descricao: 'Cartão entregue à transportadora.' },
+  { id: 'a_caminho', titulo: 'A caminho', descricao: 'Saiu para entrega no seu endereço.' },
+  { id: 'entregue', titulo: 'Entregue', descricao: 'Cartão nas suas mãos. Ative no app!' },
+]
+
+export const indicados = [
+  { nome: 'Ana Paula', status: 'concluida', data: '15/10' },
+  { nome: 'Bruno M.', status: 'concluida', data: '09/10' },
+  { nome: 'Carla R.', status: 'concluida', data: '02/10' },
+  { nome: 'Diego S.', status: 'pendente', data: '25/10' },
+  { nome: 'Elaine F.', status: 'pendente', data: '27/10' },
+] as const
+
+export const atalhos = [
+  { id: 'parcela', titulo: 'MAIS Parcela', descricao: 'Crédito na Carteira em até 12x', icon: 'parcela' },
+  { id: 'transferir', titulo: 'Transferir', descricao: 'Entre Conta+ ou Pix', icon: 'transferir' },
+  { id: 'extrato', titulo: 'Extrato da Carteira', descricao: 'Veja todas as movimentações', icon: 'extrato' },
+  { id: 'coins', titulo: '+Coins', descricao: 'Suas moedas e benefícios', icon: 'coins' },
+  { id: 'trocar', titulo: 'Trocar +Coins', descricao: 'Troque suas moedas por dinheiro', icon: 'trocar' },
+  { id: 'saldo', titulo: 'Adicionar saldo', descricao: 'Via Pix ou Open Finance', icon: 'saldo' },
+] as const
+
+export const banners = [
+  {
+    id: 'b1',
+    titulo: 'Seu MAIS Card foi emitido!',
+    texto: 'Acompanhe cada etapa até seu cartão chegar nas suas mãos.',
+    rotulo: 'Seu limite disponível:',
+    valor: cartao.limiteBanner,
+    cta: 'Acompanhar Agora',
+    to: '/entrega',
+    variante: 'preto' as const,
+  },
+  {
+    id: 'b2',
+    titulo: 'Indique e ganhe!',
+    texto: 'Ganhe R$ 10 + 1.000 +Coins por cada amigo que concluir o cadastro.',
+    rotulo: 'Você já ganhou:',
+    valor: indicacao.ganhosReais,
+    cta: 'Indicar agora',
+    to: '/indicar',
+    variante: 'amarelo' as const,
+  },
+  {
+    id: 'b3',
+    titulo: 'MAIS Parcela',
+    texto: 'Crédito direto na sua Carteira+ em até 12x, sem burocracia.',
+    rotulo: 'Disponível para você:',
+    valor: 1200,
+    cta: 'Simular agora',
+    to: '/card',
+    variante: 'preto' as const,
+  },
+]
+
+export function formatBRL(value: number) {
+  return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+}
+
+export function formatNumber(value: number) {
+  return value.toLocaleString('pt-BR')
+}

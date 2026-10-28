@@ -1,0 +1,79 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: "Nunito", ui-sans-serif, system-ui, sans-serif;
+
+  --color-brand: #F5C21B;
+  --color-brand-dark: #D9A90F;
+  --color-ink: #0F0F0F;
+  --color-surface: #FFFFFF;
+  --color-muted: #F4F4F4;
+  --color-cream: #FBF6E4;
+  --color-danger: #E5484D;
+
+  --color-dark-bg: #121212;
+  --color-dark-card: #1E1E1E;
+  --color-dark-cream: #2A2410;
+
+  --radius-card: 24px;
+  --shadow-soft: 0 8px 30px rgba(15, 15, 15, 0.06);
+  --shadow-soft-dark: 0 8px 30px rgba(0, 0, 0, 0.35);
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  background: #e9e9e9;
+  color: var(--color-ink);
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.dark body {
+  background: #050505;
+  color: #ffffff;
+}
+
+/* Card padrão */
+.card {
+  @apply bg-surface dark:bg-dark-card rounded-[24px] shadow-[var(--shadow-soft)] dark:shadow-[var(--shadow-soft-dark)];
+}
+
+.card-cream {
+  @apply bg-cream dark:bg-dark-cream rounded-[24px];
+}
+
+.btn-pill {
+  @apply inline-flex items-center justify-center rounded-full bg-ink text-white font-semibold px-5 py-3 text-sm
+         active:scale-[0.98] transition-transform duration-150 dark:bg-white dark:text-ink;
+}
+
+.btn-outline {
+  @apply inline-flex items-center justify-center rounded-full border-2 border-ink text-ink font-semibold px-5 py-3 text-sm
+         active:scale-[0.98] transition-transform duration-150 dark:border-white dark:text-white;
+}
+
+.text-subtle {
+  @apply text-neutral-500 dark:text-neutral-400;
+}
+
+/* Scroll sem barra */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* Animações */
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.fade-up { animation: fade-up 0.45s ease both; }
+.delay-1 { animation-delay: 0.06s; }
+.delay-2 { animation-delay: 0.12s; }
+.delay-3 { animation-delay: 0.18s; }
+.delay-4 { animation-delay: 0.24s; }
