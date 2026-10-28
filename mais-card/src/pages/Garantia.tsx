@@ -18,14 +18,14 @@ export function Garantia() {
 
   return (
     <PageTransition>
-      <StepHeader step={4} total={4} title="Caixinha Garantia" subtitle="Escolha quanto guardar. Esse valor vira o seu limite e continua rendendo." backTo="/selfie" />
+      <StepHeader step={4} total={4} title="Caixinha Garantia" subtitle="Escolha quanto guardar. Esse valor vira o seu limite depois de 7 dias na Caixinha e rende desde o primeiro dia." backTo="/selfie" />
       <div className="px-5 pt-6 pb-6 space-y-4">
         <section className="card-cream p-5 flex items-center gap-4">
           <CardVirtual size="sm" variant="amarelo" />
           <div className="min-w-0">
             <p className="text-[12.5px] text-subtle">Seu limite será</p>
             <p className="text-[26px] font-extrabold leading-tight">{formatBRL(valido ? valor : 0)}</p>
-            <p className="text-[12px] text-subtle">igual ao valor guardado</p>
+            <p className="text-[12px] text-subtle">igual ao valor guardado, ativo em {garantia.carenciaDias} dias</p>
           </div>
         </section>
 

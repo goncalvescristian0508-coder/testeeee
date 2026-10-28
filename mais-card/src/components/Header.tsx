@@ -1,8 +1,8 @@
 import { Logo } from './Logo'
 import { BellIcon, CameraIcon, HeadsetIcon, MoonIcon, SearchIcon, SunIcon, UserIcon } from './Icons'
-import { user } from '../data/mock'
+import type { Usuario } from '../services/types'
 
-type Props = { theme: 'light' | 'dark'; onToggleTheme: () => void }
+type Props = { theme: 'light' | 'dark'; onToggleTheme: () => void; usuario?: Usuario | null }
 
 function IconButton({ label, children, onClick }: { label: string; children: React.ReactNode; onClick?: () => void }) {
   return (
@@ -17,7 +17,7 @@ function IconButton({ label, children, onClick }: { label: string; children: Rea
   )
 }
 
-export function Header({ theme, onToggleTheme }: Props) {
+export function Header({ theme, onToggleTheme, usuario }: Props) {
   return (
     <header className="bg-brand text-ink rounded-b-[28px] px-5 pt-[calc(env(safe-area-inset-top)+14px)] pb-7 shadow-[0_6px_20px_rgba(245,194,27,0.25)]">
       <div className="flex items-center justify-between">
@@ -30,7 +30,7 @@ export function Header({ theme, onToggleTheme }: Props) {
           <IconButton label="Notificações">
             <BellIcon size={24} />
             <span className="absolute -top-0.5 right-0 min-w-[22px] h-[22px] px-1 rounded-full bg-ink text-white text-[11px] font-bold grid place-items-center border-2 border-brand">
-              {user.notificacoes}
+              {usuario?.notificacoes ?? 0}
             </span>
           </IconButton>
           <IconButton label="Buscar"><SearchIcon size={24} /></IconButton>
@@ -46,7 +46,7 @@ export function Header({ theme, onToggleTheme }: Props) {
         </div>
         <div>
           <h1 className="text-[22px] font-extrabold leading-tight">
-            Olá, {user.nome}! <span aria-hidden="true">👋</span>
+            Olá{usuario ? `, ${usuario.nome}` : ''}! <span aria-hidden="true">👋</span>
           </h1>
           <p className="text-[15px] font-semibold text-ink/80">Aqui você é MAIS!</p>
         </div>

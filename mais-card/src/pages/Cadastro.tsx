@@ -21,7 +21,6 @@ const input = 'mt-1 w-full rounded-2xl bg-surface dark:bg-dark-card px-4 py-3.5 
 export function Cadastro() {
   const navigate = useNavigate()
   const { data, update } = useOnboarding()
-  const [senha, setSenha] = useState('')
   const [aceite, setAceite] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
 
@@ -30,7 +29,7 @@ export function Cadastro() {
     if (data.cpf.replace(/\D/g, '').length !== 11) return setErro('CPF incompleto.')
     if (!/^\S+@\S+\.\S+$/.test(data.email)) return setErro('E-mail inválido.')
     if (data.celular.replace(/\D/g, '').length !== 11) return setErro('Celular incompleto.')
-    if (senha.length < 6) return setErro('A senha precisa ter pelo menos 6 caracteres.')
+    if (data.senha.length < 6) return setErro('A senha precisa ter pelo menos 6 caracteres.')
     if (!aceite) return setErro('Você precisa aceitar os termos para continuar.')
     setErro(null)
     navigate('/documento')
@@ -44,7 +43,7 @@ export function Cadastro() {
         <Field label="CPF"><input id="cpf" className={input} inputMode="numeric" value={data.cpf} onChange={(e) => update({ cpf: maskCpf(e.target.value) })} placeholder="000.000.000-00" /></Field>
         <Field label="E-mail"><input id="email" className={input} type="email" value={data.email} onChange={(e) => update({ email: e.target.value })} autoComplete="email" placeholder="voce@email.com" /></Field>
         <Field label="Celular"><input id="celular" className={input} inputMode="tel" value={data.celular} onChange={(e) => update({ celular: maskCel(e.target.value) })} placeholder="(11) 90000-0000" /></Field>
-        <Field label="Crie uma senha"><input id="senha" className={input} type="password" value={senha} onChange={(e) => setSenha(e.target.value)} autoComplete="new-password" placeholder="Mínimo de 6 caracteres" /></Field>
+        <Field label="Crie uma senha"><input id="senha" className={input} type="password" value={data.senha} onChange={(e) => update({ senha: e.target.value })} autoComplete="new-password" placeholder="Mínimo de 6 caracteres" /></Field>
 
         <label className="flex items-start gap-3 text-[13px] text-subtle pt-1">
           <input id="aceite" type="checkbox" checked={aceite} onChange={(e) => setAceite(e.target.checked)} className="mt-0.5 w-5 h-5 accent-[#F5C21B]" />

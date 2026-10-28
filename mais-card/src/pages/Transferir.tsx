@@ -3,17 +3,25 @@ import { PageTransition } from '../components/PageTransition'
 import { TopBar } from '../components/TopBar'
 import { Toast } from '../components/Toast'
 import { PixDiamondIcon, QrIcon, SendIcon, WalletIcon, PlusCircleIcon } from '../components/Icons'
-import { carteira, formatBRL } from '../data/mock'
+import { formatBRL } from '../data/mock'
+import { api } from '../services/api'
+import { useAsync } from '../hooks/useAsync'
 import { useToast } from '../hooks/useToast'
 
 export function Transferir() {
   const { message, show } = useToast()
   const [valor, setValor] = useState('')
   const [chave, setChave] = useState('')
+  const carteira = useAsync(() => api.getCarteira())
 
-  const enviar = () => {
+  const enviar = async () => {
     if (!valor || !chave) return show('Preencha a chave e o valor')
-    show(`Pix de R$ ${valor} enviado (simulação)`)
+    const num = Number(valor.replace(',', '.'))
+    if (!num || num <= 0) return show('Valor inválido')
+    if (carteira.data && num > carteira.data.saldoDisponivel) return show('Saldo insuficiente')
+    await api.enviarPix(chave, num)
+    carteira.reload()
+    show(`Pix de ${formatBRL(num)} enviado`)
     setValor('')
     setChave('')
   }
@@ -24,7 +32,7 @@ export function Transferir() {
       <div className="px-4 pt-5 pb-4 space-y-4">
         <section className="card p-5 fade-up">
           <p className="text-[12.5px] text-subtle">Saldo disponível</p>
-          <p className="text-[26px] font-extrabold">{formatBRL(carteira.saldoDisponivel)}</p>
+          <p className="text-[26px] font-extrabold">{carteira.data ? formatBRL(carteira.data.saldoDisponivel) : '—'}</p>
         </section>
 
         <section className="grid grid-cols-4 gap-2 fade-up delay-1">

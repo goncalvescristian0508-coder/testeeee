@@ -2,11 +2,17 @@ import { TopBar } from '../components/TopBar'
 import { Timeline } from '../components/Timeline'
 import { CardVirtual } from '../components/CardVirtual'
 import { PageTransition } from '../components/PageTransition'
+import { Skeleton } from '../components/Skeleton'
 import { TruckIcon } from '../components/Icons'
-import { cartao, etapasEntrega } from '../data/mock'
+import { api } from '../services/api'
+import { useAsync } from '../hooks/useAsync'
 
 export function Entrega() {
-  const idx = etapasEntrega.findIndex((e) => e.id === cartao.status)
+  const cartao = useAsync(() => api.getCartao())
+  const etapas = useAsync(() => api.getEtapasEntrega())
+  const lista = etapas.data ?? []
+  const idx = cartao.data ? lista.findIndex((e) => e.id === cartao.data!.status) : -1
+
   return (
     <PageTransition>
       <TopBar title="Acompanhar entrega" backTo="/" />
@@ -15,14 +21,14 @@ export function Entrega() {
           <CardVirtual size="sm" />
           <div className="min-w-0">
             <p className="text-[12.5px] text-subtle">Status do cartão</p>
-            <p className="text-[18px] font-extrabold leading-tight mt-0.5">{cartao.statusLabel}</p>
-            <p className="text-[12.5px] text-subtle mt-1">Etapa {idx + 1} de {etapasEntrega.length}</p>
+            {cartao.data ? <p className="text-[18px] font-extrabold leading-tight mt-0.5">{cartao.data.statusLabel}</p> : <Skeleton className="h-6 w-28 mt-1" />}
+            <p className="text-[12.5px] text-subtle mt-1">{idx >= 0 ? `Etapa ${idx + 1} de ${lista.length}` : ' '}</p>
           </div>
         </section>
 
         <section className="card p-5">
           <h2 className="text-[17px] font-extrabold mb-5">Etapas da entrega</h2>
-          <Timeline steps={etapasEntrega} currentId={cartao.status} />
+          {lista.length && cartao.data ? <Timeline steps={lista} currentId={cartao.data.status} /> : <div className="space-y-4"><Skeleton className="h-10" /><Skeleton className="h-10" /><Skeleton className="h-10" /></div>}
         </section>
 
         <section className="card p-5 flex items-center gap-4 fade-up delay-4">

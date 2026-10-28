@@ -1,6 +1,9 @@
-export type CardStatus = 'emitido' | 'producao' | 'enviado' | 'a_caminho' | 'entregue'
+import type { CardStatus, EtapaEntrega, Garantia, Indicado, Transacao } from '../services/types'
+
+export type { CardStatus, EtapaEntrega, Transacao }
 
 export const user = {
+  id: 'u_demo',
   nome: 'Carlos',
   nomeCompleto: 'Carlos Silva',
   nomeCartao: 'JOÃO SILVA',
@@ -27,6 +30,7 @@ export const cartao = {
   limiteBanner: 800,
   bandeira: 'Mastercard',
   validade: '10/31',
+  bloqueado: false,
 }
 
 export const fatura = {
@@ -53,15 +57,6 @@ export const indicacao = {
   ganhosCoins: 3000,
 }
 
-export type Transacao = {
-  id: string
-  descricao: string
-  categoria: string
-  valor: number
-  data: string
-  tipo: 'debito' | 'credito'
-}
-
 export const transacoes: Transacao[] = [
   { id: 't1', descricao: 'iFood', categoria: 'Alimentação', valor: -32.9, data: '27/10', tipo: 'debito' },
   { id: 't2', descricao: 'Pix recebido · Ana', categoria: 'Transferência', valor: 150, data: '26/10', tipo: 'credito' },
@@ -69,13 +64,6 @@ export const transacoes: Transacao[] = [
   { id: 't4', descricao: 'Uber', categoria: 'Transporte', valor: -18.4, data: '24/10', tipo: 'debito' },
   { id: 't5', descricao: 'Adicionar saldo · Pix', categoria: 'Depósito', valor: 200, data: '22/10', tipo: 'credito' },
 ]
-
-export type EtapaEntrega = {
-  id: CardStatus
-  titulo: string
-  descricao: string
-  data?: string
-}
 
 export const etapasEntrega: EtapaEntrega[] = [
   { id: 'emitido', titulo: 'Emitido', descricao: 'Seu MAIS Card foi aprovado e emitido.', data: '20/10/2026' },
@@ -85,13 +73,13 @@ export const etapasEntrega: EtapaEntrega[] = [
   { id: 'entregue', titulo: 'Entregue', descricao: 'Cartão nas suas mãos. Ative no app!' },
 ]
 
-export const indicados = [
+export const indicados: Indicado[] = [
   { nome: 'Ana Paula', status: 'concluida', data: '15/10' },
   { nome: 'Bruno M.', status: 'concluida', data: '09/10' },
   { nome: 'Carla R.', status: 'concluida', data: '02/10' },
   { nome: 'Diego S.', status: 'pendente', data: '25/10' },
   { nome: 'Elaine F.', status: 'pendente', data: '27/10' },
-] as const
+]
 
 export const atalhos = [
   { id: 'parcela', titulo: 'MAIS Parcela', descricao: 'Crédito na Carteira em até 12x', icon: 'parcela' },
@@ -183,7 +171,7 @@ export const quizPerguntas: QuizQuestion[] = [
   {
     id: 'garantia',
     titulo: 'Quanto você quer guardar na Caixinha Garantia?',
-    subtitulo: 'O valor vira seu limite e continua rendendo. Você resgata quando quiser.',
+    subtitulo: 'O valor vira seu limite após 7 dias na Caixinha. Você resgata quando quiser.',
     opcoes: [
       { id: '25', label: 'R$ 25', hint: 'Limite de R$ 25' },
       { id: '100', label: 'R$ 100', hint: 'Limite de R$ 100' },
@@ -198,13 +186,37 @@ export const garantia = {
   minimo: 25,
   maximo: 5000,
   rendimento: '100% do CDI',
+  carenciaDias: 7,
   regras: [
     'Seu limite é exatamente o valor guardado na Caixinha Garantia.',
-    'O dinheiro continua seu e rende 100% do CDI todos os dias úteis.',
-    'Você pode resgatar quando quiser. O limite diminui junto com o resgate.',
+    'O limite é ativado depois que o valor completa 7 dias na Caixinha.',
+    'O dinheiro continua seu e rende 100% do CDI desde o primeiro dia.',
+    'Você pode resgatar quando quiser, inclusive antes dos 7 dias. Se resgatar, o limite não é ativado ou diminui junto.',
     'Não consultamos restrições de crédito para liberar o cartão garantido.',
-    'Sem taxa de adesão, sem anuidade e sem prazo mínimo.',
+    'Sem taxa de adesão e sem anuidade.',
   ],
+}
+
+/** Caixinha do usuário demo: depositou há 3 dias, limite ativa em 4. */
+const hoje = new Date()
+const diasAtras = (n: number) => new Date(hoje.getTime() - n * 86_400_000)
+export const garantiaAtual: Garantia = {
+  valor: 400,
+  depositadoEm: diasAtras(3).toISOString(),
+  liberaEm: diasAtras(-4).toISOString(),
+  carenciaDias: garantia.carenciaDias,
+  status: 'aguardando',
+  rendimento: garantia.rendimento,
+}
+
+export function formatDate(iso: string) {
+  return new Date(iso).toLocaleDateString('pt-BR')
+}
+
+/** Dias inteiros desde o depósito (limitado à carência). */
+export function diasNaCaixinha(g: Garantia) {
+  const dias = Math.floor((Date.now() - new Date(g.depositadoEm).getTime()) / 86_400_000)
+  return Math.max(0, Math.min(g.carenciaDias, dias))
 }
 
 export const documentosAceitos = [

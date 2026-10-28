@@ -3,7 +3,8 @@ import { PageTransition } from '../components/PageTransition'
 import { TopBar } from '../components/TopBar'
 import { Toast } from '../components/Toast'
 import { BellIcon, CameraIcon, ChevronRightIcon, IdIcon, LogoutIcon, MailIcon, MoonIcon, PhoneIcon, ShieldIcon, UserIcon, WalletIcon } from '../components/Icons'
-import { user } from '../data/mock'
+import { api } from '../services/api'
+import { useAsync } from '../hooks/useAsync'
 import { useToast } from '../hooks/useToast'
 
 type Props = { theme: 'light' | 'dark'; onToggleTheme: () => void }
@@ -30,6 +31,8 @@ export function Perfil({ theme, onToggleTheme }: Props) {
   const navigate = useNavigate()
   const { message, show } = useToast()
   const dark = theme === 'dark'
+  const { data: u } = useAsync(() => api.getUsuario())
+  const user = u ?? { nomeCompleto: '…', email: '', cpf: '', telefone: '', conta: '', notificacoes: 0 }
 
   return (
     <PageTransition>

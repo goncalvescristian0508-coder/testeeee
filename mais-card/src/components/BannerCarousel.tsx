@@ -1,12 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { CardVirtual } from './CardVirtual'
-import { banners, formatBRL } from '../data/mock'
+import { formatBRL } from '../data/mock'
+import { api } from '../services/api'
+import { useAsync } from '../hooks/useAsync'
 
 export function BannerCarousel() {
   const navigate = useNavigate()
   const ref = useRef<HTMLDivElement>(null)
   const [index, setIndex] = useState(0)
+  const banners = useAsync(() => api.getBanners()).data ?? []
 
   useEffect(() => {
     const el = ref.current
@@ -17,7 +20,7 @@ export function BannerCarousel() {
     }
     el.addEventListener('scroll', onScroll, { passive: true })
     return () => el.removeEventListener('scroll', onScroll)
-  }, [])
+  }, [banners.length])
 
   const goTo = (i: number) => {
     const el = ref.current

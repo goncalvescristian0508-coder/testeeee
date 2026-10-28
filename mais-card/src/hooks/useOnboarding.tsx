@@ -6,6 +6,7 @@ export type OnboardingData = {
   cpf: string
   email: string
   celular: string
+  senha: string
   documento: string
   docFrente: boolean
   docVerso: boolean
@@ -19,6 +20,7 @@ const inicial: OnboardingData = {
   cpf: '',
   email: '',
   celular: '',
+  senha: '',
   documento: '',
   docFrente: false,
   docVerso: false,
