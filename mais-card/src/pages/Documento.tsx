@@ -52,7 +52,7 @@ export function Documento() {
 
   return (
     <PageTransition>
-      <StepHeader step={3} total={5} title="Envie seu documento" subtitle="Escolha o documento e fotografe em um lugar bem iluminado, sem reflexos." backTo="/endereco" />
+      <StepHeader step={3} total={4} title="Envie seu documento" subtitle="Escolha o documento e fotografe em um lugar bem iluminado, sem reflexos." backTo="/endereco" />
       <div className="px-5 pt-6 pb-6 space-y-4">
         <div className="grid grid-cols-3 gap-2">
           {documentosAceitos.map((d) => {

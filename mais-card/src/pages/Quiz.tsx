@@ -30,11 +30,11 @@ export function Quiz() {
         <div className="px-5 pt-[calc(env(safe-area-inset-top)+24px)] pb-6 flex flex-col items-center text-center">
           <span className="inline-flex items-center gap-1.5 text-[12px] font-extrabold bg-brand text-ink rounded-full px-3 py-1"><CheckIcon size={14} strokeWidth={3} /> Perfil pronto</span>
           <h1 className="mt-4 text-[26px] leading-tight font-extrabold text-balance">O MAIS Card Garantido é para você</h1>
-          <p className="mt-2 text-[14.5px] text-subtle">Seu limite será exatamente o valor que você guardar na Caixinha Garantia, ativado após 7 dias.</p>
+          <p className="mt-2 text-[14.5px] text-subtle">Abra sua conta sem depositar nada. Depois da aprovação, você escolhe quanto guardar na Caixinha Garantia e esse valor vira seu limite em 7 dias.</p>
           <div className="my-7"><CardVirtual size="md" variant="amarelo" /></div>
           <div className="card w-full p-5 text-left">
-            <div className="flex justify-between text-[15px]"><span className="text-subtle">Você guarda</span><span className="font-extrabold">{formatBRL(valor)}</span></div>
-            <div className="flex justify-between text-[15px] mt-3"><span className="text-subtle">Seu limite</span><span className="font-extrabold">{formatBRL(valor)}</span></div>
+            <div className="flex justify-between text-[15px]"><span className="text-subtle">Sugestão para guardar</span><span className="font-extrabold">{formatBRL(valor)}</span></div>
+            <div className="flex justify-between text-[15px] mt-3"><span className="text-subtle">Seu limite seria</span><span className="font-extrabold">{formatBRL(valor)}</span></div>
             <div className="flex justify-between text-[15px] mt-3"><span className="text-subtle">Rendimento</span><span className="font-extrabold">100% do CDI</span></div>
             <div className="flex justify-between text-[15px] mt-3"><span className="text-subtle">Limite ativo em</span><span className="font-extrabold">7 dias</span></div>
             <div className="flex justify-between text-[15px] mt-3"><span className="text-subtle">Resgate</span><span className="font-extrabold">Quando quiser</span></div>

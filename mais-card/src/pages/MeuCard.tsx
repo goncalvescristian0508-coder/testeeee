@@ -86,10 +86,18 @@ export function MeuCard() {
           </div>
         </section>
 
-        {garantia.data && (
+        {garantia.data ? (
           <div className="fade-up delay-2">
             <GarantiaCard garantia={garantia.data} />
           </div>
+        ) : (
+          !garantia.loading && (
+            <section className="card-cream p-5 fade-up delay-2">
+              <p className="font-extrabold text-[15px]">Seu limite ainda não foi ativado</p>
+              <p className="text-[13px] text-subtle mt-0.5">Guarde um valor na Caixinha Garantia. Ele vira seu limite em 7 dias e continua seu.</p>
+              <button type="button" onClick={() => navigate('/garantia')} className="btn-pill w-full mt-4">Ativar meu limite</button>
+            </section>
+          )
         )}
 
         <section className="card-cream p-5 space-y-4 text-[15px] fade-up delay-2">

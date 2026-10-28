@@ -238,8 +238,8 @@ export const landing = {
   parceiro: 'instituição financeira parceira autorizada pelo Banco Central',
   passos: [
     { titulo: 'Responda o quiz', texto: '4 perguntas rápidas para entender seu objetivo e sugerir um valor confortável.' },
-    { titulo: 'Abra sua conta', texto: 'Dados pessoais, endereço de entrega e verificação de identidade pelo app.' },
-    { titulo: 'Guarde na Caixinha', texto: 'Escolha o valor via Pix. Ele é seu, rende desde o primeiro dia e pode ser resgatado quando quiser.' },
+    { titulo: 'Abra sua conta', texto: 'Dados pessoais, endereço de entrega e verificação de identidade. Sem depositar nada. A análise leva cerca de 5 minutos.' },
+    { titulo: 'Guarde na Caixinha', texto: 'Com a conta aprovada, escolha o valor via Pix. Ele é seu, rende desde o primeiro dia e pode ser resgatado quando quiser.' },
     { titulo: 'Use seu limite', texto: 'Após 7 dias na Caixinha, seu limite é ativado com o mesmo valor guardado. O cartão chega em casa.' },
   ],
   faq: [

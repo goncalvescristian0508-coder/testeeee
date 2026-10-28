@@ -37,7 +37,7 @@ export function Cadastro() {
 
   return (
     <PageTransition>
-      <StepHeader step={1} total={5} title="Vamos criar sua conta" subtitle="Preencha seus dados como estão no documento." backTo="/quiz" />
+      <StepHeader step={1} total={4} title="Vamos criar sua conta" subtitle="Preencha seus dados como estão no documento." backTo="/quiz" />
       <div className="px-5 pt-6 pb-6 space-y-4">
         <Field label="Nome completo"><input id="nome" className={input} value={data.nome} onChange={(e) => update({ nome: e.target.value })} autoComplete="name" placeholder="Como está no documento" /></Field>
         <Field label="CPF"><input id="cpf" className={input} inputMode="numeric" value={data.cpf} onChange={(e) => update({ cpf: maskCpf(e.target.value) })} placeholder="000.000.000-00" /></Field>

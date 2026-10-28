@@ -33,8 +33,18 @@ No desktop o app aparece numa "moldura" de celular com 430px de largura; no celu
 | `/endereco` | Endereço de entrega do cartão, com busca por CEP (ViaCEP) |
 | `/documento` | Captura de documento (RG, CNH ou RNE) com a câmera, enviada ao backend |
 | `/selfie` | Selfie com a câmera, enviada ao backend para comparação e prova de vida |
-| `/garantia` | Caixinha Garantia (valor vira o limite após 7 dias) e escolha do dia de vencimento |
-| `/conta-criada` | Confirmação da conta e do limite liberado |
+| `/garantia` | Depois da aprovação: Caixinha Garantia (valor vira o limite após 7 dias) e dia de vencimento |
+| `/conta-criada` | Cadastro enviado: a conta entra em análise (sem depósito) e o cliente entra no app |
+
+## Análise da conta
+
+O cadastro termina na verificação de identidade. A conta fica **em análise** por cerca de 5
+minutos (`VITE_ANALISE_MINUTOS`, simulado no `mockApi` com o horário salvo no `localStorage`),
+sem nenhum depósito. O cliente entra no app e vê o card "Analisando seu cadastro" com a previsão.
+O hook `useStatusConta` consulta `getStatusConta` a cada 10 s; quando a conta é aprovada, o app
+mostra uma única vez a mensagem "Sua conta foi aprovada" com o botão "Ativar meu limite", que leva
+à Caixinha Garantia (`ativarGarantia`). Em produção, o backend decide a aprovação e pode avisar por
+push ou SMS além da consulta.
 
 ## Modelo do cartão garantido
 
@@ -73,13 +83,14 @@ do hook `useAsync`, que cuida de loading e erro. Para ligar um banco de dados:
    `supabaseApi.ts`, por exemplo). Cada método corresponde a uma tela ou ação:
    `getUsuario`, `getCarteira`, `getCartao`, `setCartaoBloqueado`, `getFatura`, `pagarFatura`,
    `getTransacoes`, `getEtapasEntrega`, `getIndicacao`, `getIndicados`, `getCoins`,
-   `trocarCoins`, `getBanners`, `getGarantia`, `enviarPix` e `abrirConta`.
+   `trocarCoins`, `getBanners`, `getGarantia`, `enviarPix`, `abrirConta`, `getStatusConta` e
+   `ativarGarantia`.
 3. Copie `.env.example` para `.env` e troque `VITE_API_MODE` para `http`
    (ou aponte a constante `api` para a sua implementação).
 
-`abrirConta` recebe tudo que o onboarding coleta (quiz, dados pessoais, tipo de documento,
-arquivos de documento e selfie, valor da Caixinha) e devolve a `Garantia` com as datas de
-depósito e de ativação do limite.
+`abrirConta` recebe o que o cadastro coleta (quiz, dados pessoais, endereço e o resultado da
+verificação de identidade) e devolve o `StatusConta` em análise. `ativarGarantia` é chamado só
+depois da aprovação e devolve a `Garantia` com as datas de depósito e de ativação do limite.
 
 ## Estrutura
 

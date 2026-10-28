@@ -4,6 +4,9 @@ import { BannerCarousel } from '../components/BannerCarousel'
 import { ShortcutGrid } from '../components/ShortcutGrid'
 import { PageTransition } from '../components/PageTransition'
 import { Skeleton } from '../components/Skeleton'
+import { StatusContaCard } from '../components/StatusContaCard'
+import { AprovacaoModal } from '../components/AprovacaoModal'
+import { useStatusConta } from '../hooks/useStatusConta'
 import { ArrowRightIcon, ChevronRightIcon, CoinIcon, EyeIcon, EyeOffIcon, GearIcon, StarIcon, UsersIcon } from '../components/Icons'
 import { formatBRL, formatNumber } from '../data/mock'
 import { api } from '../services/api'
@@ -19,6 +22,8 @@ export function Home({ theme, onToggleTheme }: Props) {
   const carteira = useAsync(() => api.getCarteira())
   const coins = useAsync(() => api.getCoins())
   const indicacao = useAsync(() => api.getIndicacao())
+  const garantia = useAsync(() => api.getGarantia())
+  const conta = useStatusConta()
   const money = (v: number) => (hidden ? 'R$ ••••' : formatBRL(v))
 
   return (
@@ -60,8 +65,15 @@ export function Home({ theme, onToggleTheme }: Props) {
           </div>
         </section>
 
+        {conta.status && (conta.status.status !== 'aprovada' || (garantia.data === null && !garantia.loading)) && (
+          <section className="fade-up delay-1">
+            <StatusContaCard status={conta.status} restanteMs={conta.restanteMs} temGarantia={!!garantia.data} />
+          </section>
+        )}
+
         <section className="fade-up delay-1">
-          <BannerCarousel />
+          {/* Sem Caixinha ativa não existe cartão emitido: esconde esse banner. */}
+          <BannerCarousel ocultar={!garantia.loading && !garantia.data ? ['b1'] : []} />
         </section>
 
         <section className="fade-up delay-2">
@@ -98,6 +110,7 @@ export function Home({ theme, onToggleTheme }: Props) {
           </button>
         </section>
       </div>
+      {conta.avisoPendente && <AprovacaoModal nome={usuario.data?.nome} onFechar={conta.marcarAvisoVisto} />}
     </PageTransition>
   )
 }

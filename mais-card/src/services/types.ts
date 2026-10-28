@@ -115,7 +115,7 @@ export type VerificacaoIdentidade = {
   provaDeVidaOk: boolean
 }
 
-/** Dados enviados ao fim do onboarding. */
+/** Dados enviados ao fim do cadastro (antes da análise). Nenhum depósito acontece aqui. */
 export type AberturaConta = {
   respostasQuiz: Record<string, string>
   nome: string
@@ -125,11 +125,19 @@ export type AberturaConta = {
   senha: string
   endereco: Endereco
   identidade: VerificacaoIdentidade | null
-  valorGarantia: number
-  diaVencimento: number
+}
+
+/** Situação da conta. A aprovação chega depois da análise (em produção, por push/SMS). */
+export type StatusConta = {
+  status: 'em_analise' | 'aprovada' | 'recusada'
+  criadaEm: string
+  /** Previsão de conclusão da análise (ISO). */
+  previsaoEm: string
+  aprovadaEm?: string
+  motivoRecusa?: string
 }
 
 export type ResultadoAbertura = {
   usuarioId: string
-  garantia: Garantia
+  conta: StatusConta
 }

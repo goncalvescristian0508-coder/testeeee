@@ -23,7 +23,7 @@ import { OnboardingProvider } from './hooks/useOnboarding'
 export default function App() {
   const { theme, toggle } = useTheme()
   const location = useLocation()
-  const onboarding = ['/conheca', '/quiz', '/cadastro', '/endereco', '/documento', '/selfie', '/garantia', '/conta-criada'].includes(location.pathname)
+  const onboarding = ['/conheca', '/quiz', '/cadastro', '/endereco', '/documento', '/selfie', '/conta-criada'].includes(location.pathname)
 
   return (
     <OnboardingProvider>

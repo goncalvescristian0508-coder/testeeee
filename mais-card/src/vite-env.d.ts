@@ -5,4 +5,5 @@ interface ImportMetaEnv {
   readonly VITE_API_URL?: string
   readonly VITE_IDENTITY_MODE?: 'mock' | 'http'
   readonly VITE_ROUTER?: 'memory' | 'browser'
+  readonly VITE_ANALISE_MINUTOS?: string
 }

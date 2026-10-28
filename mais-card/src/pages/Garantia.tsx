@@ -1,25 +1,44 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { PageTransition } from '../components/PageTransition'
-import { StepHeader } from '../components/StepHeader'
+import { TopBar } from '../components/TopBar'
 import { CardVirtual } from '../components/CardVirtual'
 import { CheckIcon, PixDiamondIcon } from '../components/Icons'
 import { calcularCiclo, diasVencimento, formatBRL, garantia } from '../data/mock'
+import { api } from '../services/api'
 import { useOnboarding } from '../hooks/useOnboarding'
 
+/** Depois da aprovação: escolher quanto guardar e o dia de vencimento. */
 export function Garantia() {
   const navigate = useNavigate()
   const { data, update } = useOnboarding()
   const [custom, setCustom] = useState('')
+  const [enviando, setEnviando] = useState(false)
+  const [erro, setErro] = useState<string | null>(null)
   const valor = data.valorGarantia
   const valido = valor >= garantia.minimo && valor <= garantia.maximo
-
   const setValor = (v: number) => update({ valorGarantia: v })
+
+  const guardar = async () => {
+    if (!valido) return
+    setEnviando(true)
+    setErro(null)
+    try {
+      await api.ativarGarantia(valor, data.diaVencimento)
+      navigate('/card')
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : 'Não foi possível concluir. Tente de novo.')
+    } finally {
+      setEnviando(false)
+    }
+  }
 
   return (
     <PageTransition>
-      <StepHeader step={5} total={5} title="Caixinha Garantia" subtitle="Escolha quanto guardar. Esse valor vira o seu limite depois de 7 dias na Caixinha e rende desde o primeiro dia." backTo="/selfie" />
-      <div className="px-5 pt-6 pb-6 space-y-4">
+      <TopBar title="Caixinha Garantia" backTo="/" />
+      <div className="px-4 pt-5 pb-6 space-y-4">
+        <p className="px-1 text-[14px] text-subtle">Escolha quanto guardar. Esse valor vira o seu limite depois de 7 dias na Caixinha e rende desde o primeiro dia.</p>
+
         <section className="card-cream p-5 flex items-center gap-4">
           <CardVirtual size="sm" variant="amarelo" />
           <div className="min-w-0">
@@ -83,7 +102,8 @@ export function Garantia() {
           </ul>
         </section>
 
-        <button type="button" disabled={!valido} onClick={() => navigate('/conta-criada')} className="btn-pill w-full gap-2 disabled:opacity-40"><PixDiamondIcon size={18} /> Guardar {formatBRL(valido ? valor : 0)} via Pix</button>
+        {erro && <p role="alert" className="text-[13px] font-bold text-danger">{erro}</p>}
+        <button type="button" disabled={!valido || enviando} onClick={guardar} className="btn-pill w-full gap-2 disabled:opacity-40"><PixDiamondIcon size={18} /> {enviando ? 'Confirmando…' : `Guardar ${formatBRL(valido ? valor : 0)} via Pix`}</button>
         <p className="text-[12px] text-subtle text-center">Demonstração: nenhum pagamento é feito.</p>
       </div>
     </PageTransition>

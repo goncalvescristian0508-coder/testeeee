@@ -35,7 +35,7 @@ export function Selfie() {
 
   return (
     <PageTransition>
-      <StepHeader step={4} total={5} title="Agora, uma selfie" subtitle="Comparamos a selfie com a foto do documento para confirmar que é você." backTo="/documento" />
+      <StepHeader step={4} total={4} title="Agora, uma selfie" subtitle="Comparamos a selfie com a foto do documento para confirmar que é você." backTo="/documento" />
       <div className="px-5 pt-6 pb-6 flex flex-col items-center">
         <div className="relative w-[230px] h-[300px] rounded-[115px/150px] bg-surface dark:bg-dark-card ring-1 ring-black/5 dark:ring-white/10 overflow-hidden grid place-items-center">
           <span className={`absolute inset-0 rounded-[115px/150px] border-[5px] transition-colors ${data.selfie ? 'border-brand' : enviando ? 'border-brand animate-pulse' : 'border-dashed border-neutral-300 dark:border-neutral-600'}`} />
@@ -57,7 +57,7 @@ export function Selfie() {
         {erro && <p role="alert" className="mt-3 text-[13px] font-bold text-danger">{erro}</p>}
         {data.selfie ? (
           <>
-            <button type="button" onClick={() => navigate('/garantia')} className="btn-pill w-full mt-5">Continuar</button>
+            <button type="button" onClick={() => navigate('/conta-criada')} className="btn-pill w-full mt-5">Continuar</button>
             <button type="button" onClick={() => setCamera(true)} className="mt-3 text-[13.5px] font-bold text-subtle">Refazer selfie</button>
           </>
         ) : (

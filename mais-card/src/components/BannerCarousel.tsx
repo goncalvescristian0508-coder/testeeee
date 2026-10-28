@@ -5,11 +5,14 @@ import { formatBRL } from '../data/mock'
 import { api } from '../services/api'
 import { useAsync } from '../hooks/useAsync'
 
-export function BannerCarousel() {
+type Props = { ocultar?: string[] }
+
+export function BannerCarousel({ ocultar = [] }: Props) {
   const navigate = useNavigate()
   const ref = useRef<HTMLDivElement>(null)
   const [index, setIndex] = useState(0)
-  const banners = useAsync(() => api.getBanners()).data ?? []
+  const todos = useAsync(() => api.getBanners()).data ?? []
+  const banners = todos.filter((b) => !ocultar.includes(b.id))
 
   useEffect(() => {
     const el = ref.current

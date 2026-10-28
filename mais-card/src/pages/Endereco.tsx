@@ -46,7 +46,7 @@ export function Endereco() {
 
   return (
     <PageTransition>
-      <StepHeader step={2} total={5} title="Onde entregar o cartão?" subtitle="O cartão físico vai para este endereço em 5 a 10 dias úteis após a ativação." backTo="/cadastro" />
+      <StepHeader step={2} total={4} title="Onde entregar o cartão?" subtitle="O cartão físico vai para este endereço em 5 a 10 dias úteis após a ativação." backTo="/cadastro" />
       <div className="px-5 pt-6 pb-6 space-y-4">
         <Field label="CEP">
           <div className="relative">
