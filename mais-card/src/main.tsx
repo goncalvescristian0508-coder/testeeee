@@ -5,12 +5,20 @@ import App from './App'
 import './index.css'
 
 // VITE_ROUTER=memory é usado no build hospedado como demo (sem URL por rota).
-const Router = import.meta.env.VITE_ROUTER === 'memory' ? MemoryRouter : BrowserRouter
+// Nesse modo, um "#quiz" no link abre o app direto naquela tela.
+const memory = import.meta.env.VITE_ROUTER === 'memory'
+const telaInicial = memory && /^#[a-z-]+$/.test(window.location.hash) ? '/' + window.location.hash.slice(1) : '/'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <Router>
-      <App />
-    </Router>
+    {memory ? (
+      <MemoryRouter initialEntries={[telaInicial]}>
+        <App />
+      </MemoryRouter>
+    ) : (
+      <BrowserRouter>
+        <App />
+      </BrowserRouter>
+    )}
   </StrictMode>,
 )
