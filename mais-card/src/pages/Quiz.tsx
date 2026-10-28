@@ -49,7 +49,7 @@ export function Quiz() {
 
   return (
     <PageTransition>
-      <StepHeader step={idx + 1} total={total} title={pergunta.titulo} subtitle={pergunta.subtitulo} backTo={idx === 0 ? '/' : undefined} />
+      <StepHeader step={idx + 1} total={total} title={pergunta.titulo} subtitle={pergunta.subtitulo} backTo={idx === 0 ? '/conheca' : undefined} />
       <div className="px-5 pt-6 pb-6">
         <AnimatePresence mode="wait">
           <motion.ul key={pergunta.id} initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -24 }} transition={{ duration: 0.22 }} className="space-y-3">

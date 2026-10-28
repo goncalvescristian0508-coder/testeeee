@@ -22,8 +22,10 @@ export function ContaCriada() {
       email: data.email,
       celular: data.celular,
       senha: data.senha,
-      documentoTipo: data.documento,
+      endereco: data.endereco,
+      identidade: data.identidade,
       valorGarantia: data.valorGarantia,
+      diaVencimento: data.diaVencimento,
     }),
   )
   const g = abertura.data?.garantia
@@ -41,7 +43,8 @@ export function ContaCriada() {
           <div className="flex justify-between"><span className="text-subtle">Guardado na Caixinha</span><span className="font-extrabold">{formatBRL(data.valorGarantia)}</span></div>
           <div className="flex justify-between"><span className="text-subtle">Limite de {formatBRL(data.valorGarantia)} ativo em</span>{g ? <span className="font-extrabold">{formatDate(g.liberaEm)}</span> : <Skeleton className="h-5 w-20" />}</div>
           <div className="flex justify-between"><span className="text-subtle">Rendimento</span><span className="font-extrabold">{g?.rendimento ?? '100% do CDI'}</span></div>
-          <div className="flex justify-between"><span className="text-subtle">Cartão físico</span><span className="font-extrabold">5 a 10 dias úteis</span></div>
+          <div className="flex justify-between"><span className="text-subtle">Vencimento da fatura</span><span className="font-extrabold">dia {data.diaVencimento}</span></div>
+          <div className="flex justify-between gap-3"><span className="text-subtle shrink-0">Cartão físico</span><span className="font-extrabold text-right">5 a 10 dias úteis{data.endereco.cidade ? ` · ${data.endereco.cidade}/${data.endereco.uf}` : ''}</span></div>
         </div>
         <button type="button" onClick={() => { reset(); navigate('/') }} className="btn-pill w-full mt-6">Ir para o início</button>
         <button type="button" onClick={() => navigate('/entrega')} className="mt-3 text-[13.5px] font-bold text-subtle">Acompanhar entrega</button>

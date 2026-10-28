@@ -27,11 +27,13 @@ No desktop o app aparece numa "moldura" de celular com 430px de largura; no celu
 | `/transferir` | Pix e transferências (botão central da bottom bar) |
 | `/extrato` | Extrato da Carteira |
 | `/coins` | +Coins e troca de moedas |
+| `/conheca` | Landing page: regras completas, simulador, como funciona, FAQ e slot para vídeo explicativo |
 | `/quiz` | Quiz de perfil (4 perguntas) que direciona para o MAIS Card Garantido |
 | `/cadastro` | Abertura de conta: nome, CPF, e-mail, celular, senha e aceite |
-| `/documento` | Envio de documento (RG, CNH ou RNE), frente e verso simulados |
-| `/selfie` | Selfie de confirmação de identidade (simulada) |
-| `/garantia` | Caixinha Garantia: o valor guardado vira o limite, rende e pode ser resgatado |
+| `/endereco` | Endereço de entrega do cartão, com busca por CEP (ViaCEP) |
+| `/documento` | Captura de documento (RG, CNH ou RNE) pelo provedor de identidade |
+| `/selfie` | Prova de vida pelo provedor de identidade |
+| `/garantia` | Caixinha Garantia (valor vira o limite após 7 dias) e escolha do dia de vencimento |
 | `/conta-criada` | Confirmação da conta e do limite liberado |
 
 ## Modelo do cartão garantido
@@ -42,6 +44,14 @@ pode ser resgatado a qualquer momento, inclusive antes dos 7 dias; nesse caso o 
 ativado ou diminui junto. Não há taxa de adesão nem limite acima do valor guardado. As telas
 de documento e selfie são placeholders de interface; no app real entram câmera e um provedor
 de validação de identidade.
+
+## Verificação de identidade
+
+Documento e prova de vida passam por `src/services/identity.ts` (interface `IdentityProvider`).
+Hoje o `mockIdentityProvider` aprova tudo com um atraso. Em produção, implemente a interface
+chamando o SDK do provedor escolhido (Unico, idwall, Caf, Serpro...): ele abre a câmera, faz a
+captura e a prova de vida, e o app guarda apenas o id da sessão e o status
+(`VerificacaoIdentidade`), enviado em `abrirConta`. O app não processa nem armazena imagens.
 
 ## Conectando um backend
 
@@ -65,7 +75,7 @@ depósito e de ativação do limite.
 
 - `src/data/mock.ts` — usuário, saldos, cartão, fatura, transações, indicações, banners e atalhos.
 - `src/components/` — `Header`, `CardVirtual`, `BannerCarousel`, `ShortcutGrid`, `BottomNav`, `StatCard`, `Timeline`, `TopBar`, `StepHeader`, `GarantiaCard`, `Skeleton`, `Logo`, `Toast`, `Icons`.
-- `src/services/` — `types.ts` (modelos) e `api.ts` (interface `Api`, `mockApi` e esqueleto `createHttpApi`).
+- `src/services/` — `types.ts` (modelos), `api.ts` (interface `Api`, `mockApi` e esqueleto `createHttpApi`), `identity.ts` (provedor de identidade) e `cep.ts` (ViaCEP).
 - `src/hooks/` — `useAsync` (dados da API com loading/erro), `useTheme`, `useHideBalance`, `useToast`, `useOnboarding` (estado do cadastro).
 - `src/pages/` — uma pasta por tela.
 

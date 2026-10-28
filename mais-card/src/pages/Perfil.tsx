@@ -71,6 +71,7 @@ export function Perfil({ theme, onToggleTheme }: Props) {
           />
           <Row icon={<BellIcon size={20} />} label="Notificações" value={`${user.notificacoes} não lidas`} onClick={() => show('Central de notificações em breve')} />
           <Row icon={<ShieldIcon size={20} />} label="Segurança" value="Senha, biometria e dispositivos" onClick={() => show('Configurações de segurança em breve')} />
+          <Row icon={<WalletIcon size={20} />} label="Como funciona o MAIS Card" value="Regras da Caixinha Garantia" onClick={() => navigate('/conheca')} />
         </section>
 
         <button type="button" onClick={() => navigate('/')} className="w-full card p-4 flex items-center justify-center gap-2 text-danger font-extrabold fade-up delay-3 active:scale-[0.98] transition">

@@ -92,7 +92,30 @@ export type Banner = {
   variante: 'preto' | 'amarelo'
 }
 
-/** Dados enviados ao fim do onboarding. Arquivos chegam como File (ou URL após upload). */
+export type Endereco = {
+  cep: string
+  logradouro: string
+  numero: string
+  complemento: string
+  bairro: string
+  cidade: string
+  uf: string
+}
+
+/**
+ * Resultado da verificação de identidade feita pelo SDK do provedor
+ * (Unico, idwall, Caf, Serpro...). O app só guarda o id da sessão e o status;
+ * imagens e prova de vida ficam com o provedor.
+ */
+export type VerificacaoIdentidade = {
+  provedor: string
+  sessaoId: string
+  documentoTipo: string
+  documentoOk: boolean
+  provaDeVidaOk: boolean
+}
+
+/** Dados enviados ao fim do onboarding. */
 export type AberturaConta = {
   respostasQuiz: Record<string, string>
   nome: string
@@ -100,11 +123,10 @@ export type AberturaConta = {
   email: string
   celular: string
   senha: string
-  documentoTipo: string
-  documentoFrente?: File | string
-  documentoVerso?: File | string
-  selfie?: File | string
+  endereco: Endereco
+  identidade: VerificacaoIdentidade | null
   valorGarantia: number
+  diaVencimento: number
 }
 
 export type ResultadoAbertura = {

@@ -16,12 +16,14 @@ import { Documento } from './pages/Documento'
 import { Selfie } from './pages/Selfie'
 import { Garantia } from './pages/Garantia'
 import { ContaCriada } from './pages/ContaCriada'
+import { Endereco } from './pages/Endereco'
+import { Conheca } from './pages/Conheca'
 import { OnboardingProvider } from './hooks/useOnboarding'
 
 export default function App() {
   const { theme, toggle } = useTheme()
   const location = useLocation()
-  const onboarding = ['/quiz', '/cadastro', '/documento', '/selfie', '/garantia', '/conta-criada'].includes(location.pathname)
+  const onboarding = ['/conheca', '/quiz', '/cadastro', '/endereco', '/documento', '/selfie', '/garantia', '/conta-criada'].includes(location.pathname)
 
   return (
     <OnboardingProvider>
@@ -41,6 +43,8 @@ export default function App() {
               <Route path="/coins" element={<Coins />} />
               <Route path="/quiz" element={<Quiz />} />
               <Route path="/cadastro" element={<Cadastro />} />
+              <Route path="/endereco" element={<Endereco />} />
+              <Route path="/conheca" element={<Conheca />} />
               <Route path="/documento" element={<Documento />} />
               <Route path="/selfie" element={<Selfie />} />
               <Route path="/garantia" element={<Garantia />} />

@@ -224,3 +224,30 @@ export const documentosAceitos = [
   { id: 'cnh', label: 'CNH', descricao: 'Física ou digital' },
   { id: 'rne', label: 'RNE / CRNM', descricao: 'Para estrangeiros' },
 ]
+
+export const diasVencimento = [1, 5, 10, 15, 20, 25]
+
+/** Fechamento acontece 10 dias antes do vencimento; melhor dia de compra é o seguinte. */
+export function calcularCiclo(diaVencimento: number) {
+  const fechamento = ((diaVencimento - 10 + 30 - 1) % 30) + 1
+  const melhorDia = (fechamento % 30) + 1
+  return { fechamento, melhorDia }
+}
+
+export const landing = {
+  parceiro: 'instituição financeira parceira autorizada pelo Banco Central',
+  passos: [
+    { titulo: 'Responda o quiz', texto: '4 perguntas rápidas para entender seu objetivo e sugerir um valor confortável.' },
+    { titulo: 'Abra sua conta', texto: 'Dados pessoais, endereço de entrega e verificação de identidade pelo app.' },
+    { titulo: 'Guarde na Caixinha', texto: 'Escolha o valor via Pix. Ele é seu, rende desde o primeiro dia e pode ser resgatado quando quiser.' },
+    { titulo: 'Use seu limite', texto: 'Após 7 dias na Caixinha, seu limite é ativado com o mesmo valor guardado. O cartão chega em casa.' },
+  ],
+  faq: [
+    { p: 'Posso resgatar antes dos 7 dias?', r: 'Pode. O dinheiro é seu. Se resgatar antes, o limite não é ativado; se resgatar depois, o limite diminui no mesmo valor.' },
+    { p: 'Quem está negativado consegue?', r: 'Sim. O limite é garantido pelo valor guardado, então não consultamos restrições de crédito para aprovar o cartão.' },
+    { p: 'Quanto custa?', r: 'Nada para abrir a conta ou pedir o cartão. Sem taxa de adesão e sem anuidade. Juros só existem se a fatura não for paga integralmente, com as taxas informadas no contrato.' },
+    { p: 'O limite pode ser maior que o valor guardado?', r: 'Não. O limite é sempre igual ao valor que está na Caixinha Garantia. Para aumentar o limite, basta guardar mais.' },
+    { p: 'Quem emite o cartão?', r: 'O MAIS Card é emitido por uma instituição financeira parceira autorizada pelo Banco Central, com bandeira aceita no Brasil e no exterior.' },
+    { p: 'Quando o cartão físico chega?', r: 'Entre 5 e 10 dias úteis após a ativação, no endereço informado no cadastro. O cartão virtual fica disponível no app assim que o limite é ativado.' },
+  ],
+}

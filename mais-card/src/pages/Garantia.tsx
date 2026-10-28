@@ -4,7 +4,7 @@ import { PageTransition } from '../components/PageTransition'
 import { StepHeader } from '../components/StepHeader'
 import { CardVirtual } from '../components/CardVirtual'
 import { CheckIcon, PixDiamondIcon } from '../components/Icons'
-import { formatBRL, garantia } from '../data/mock'
+import { calcularCiclo, diasVencimento, formatBRL, garantia } from '../data/mock'
 import { useOnboarding } from '../hooks/useOnboarding'
 
 export function Garantia() {
@@ -18,7 +18,7 @@ export function Garantia() {
 
   return (
     <PageTransition>
-      <StepHeader step={4} total={4} title="Caixinha Garantia" subtitle="Escolha quanto guardar. Esse valor vira o seu limite depois de 7 dias na Caixinha e rende desde o primeiro dia." backTo="/selfie" />
+      <StepHeader step={5} total={5} title="Caixinha Garantia" subtitle="Escolha quanto guardar. Esse valor vira o seu limite depois de 7 dias na Caixinha e rende desde o primeiro dia." backTo="/selfie" />
       <div className="px-5 pt-6 pb-6 space-y-4">
         <section className="card-cream p-5 flex items-center gap-4">
           <CardVirtual size="sm" variant="amarelo" />
@@ -60,6 +60,18 @@ export function Garantia() {
             </div>
           </label>
           {!valido && <p role="alert" className="mt-2 text-[12.5px] font-bold text-danger">O valor precisa ficar entre {formatBRL(garantia.minimo)} e {formatBRL(garantia.maximo)}.</p>}
+        </section>
+
+        <section>
+          <p className="text-[12.5px] font-bold text-subtle mb-2">Dia do vencimento da fatura</p>
+          <div className="grid grid-cols-6 gap-1.5">
+            {diasVencimento.map((d) => (
+              <button key={d} type="button" onClick={() => update({ diaVencimento: d })} className={`card py-2.5 text-[15px] font-extrabold border-2 transition ${data.diaVencimento === d ? 'border-brand' : 'border-transparent'}`}>
+                {d}
+              </button>
+            ))}
+          </div>
+          <p className="mt-2 text-[12.5px] text-subtle">Fatura fecha dia {calcularCiclo(data.diaVencimento).fechamento}. Melhor dia de compra: dia {calcularCiclo(data.diaVencimento).melhorDia}.</p>
         </section>
 
         <section className="card p-5">

@@ -1,4 +1,5 @@
 import { createContext, useContext, useMemo, useState } from 'react'
+import type { Endereco, VerificacaoIdentidade } from '../services/types'
 
 export type OnboardingData = {
   respostas: Record<string, string>
@@ -7,11 +8,14 @@ export type OnboardingData = {
   email: string
   celular: string
   senha: string
+  endereco: Endereco
   documento: string
   docFrente: boolean
   docVerso: boolean
   selfie: boolean
+  identidade: VerificacaoIdentidade | null
   valorGarantia: number
+  diaVencimento: number
 }
 
 const inicial: OnboardingData = {
@@ -21,11 +25,14 @@ const inicial: OnboardingData = {
   email: '',
   celular: '',
   senha: '',
+  endereco: { cep: '', logradouro: '', numero: '', complemento: '', bairro: '', cidade: '', uf: '' },
   documento: '',
   docFrente: false,
   docVerso: false,
   selfie: false,
+  identidade: null,
   valorGarantia: 100,
+  diaVencimento: 10,
 }
 
 type Ctx = { data: OnboardingData; update: (patch: Partial<OnboardingData>) => void; reset: () => void }
