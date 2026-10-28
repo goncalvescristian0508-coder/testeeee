@@ -26,7 +26,7 @@ export function Conheca() {
           <ul className="text-[13px] font-bold space-y-1.5">
             <li className="flex items-center gap-1.5"><CheckIcon size={14} strokeWidth={3} /> Sem anuidade</li>
             <li className="flex items-center gap-1.5"><CheckIcon size={14} strokeWidth={3} /> Resgate quando quiser</li>
-            <li className="flex items-center gap-1.5"><CheckIcon size={14} strokeWidth={3} /> A partir de {formatBRL(garantia.minimo)}</li>
+            <li className="flex items-center gap-1.5"><CheckIcon size={14} strokeWidth={3} /> Limite de {formatBRL(garantia.minimo)} a {formatBRL(garantia.maximo)}</li>
           </ul>
         </div>
         <button type="button" onClick={() => navigate('/quiz')} className="btn-pill w-full mt-6 gap-2">Começar pelo quiz <ArrowRightIcon size={18} /></button>
@@ -36,14 +36,14 @@ export function Conheca() {
         {/* Simulador */}
         <section className="card p-5 fade-up">
           <h2 className="text-[18px] font-extrabold">Simule o seu limite</h2>
-          <p className="text-[13px] text-subtle mt-1">Arraste para escolher quanto guardar.</p>
+          <p className="text-[13px] text-subtle mt-1">Arraste para escolher quanto guardar, até {formatBRL(garantia.maximo)}.</p>
           <input
             id="simulador"
             type="range"
             min={garantia.minimo}
-            max={2000}
+            max={garantia.maximo}
             step={25}
-            value={Math.min(2000, valor)}
+            value={Math.min(garantia.maximo, valor)}
             onChange={(e) => update({ valorGarantia: Number(e.target.value) })}
             className="w-full mt-4 accent-[#F5C21B]"
             aria-label="Valor a guardar"

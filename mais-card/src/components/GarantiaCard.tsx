@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 import { WalletIcon } from './Icons'
-import { diasNaCaixinha, formatBRL, formatDate } from '../data/mock'
+import { diasNaCaixinha, formatBRL, formatDate, garantia as regras } from '../data/mock'
 import type { Garantia } from '../services/types'
 
 /** Resumo da Caixinha Garantia com o progresso da carência de 7 dias. */
@@ -32,7 +32,9 @@ export function GarantiaCard({ garantia }: { garantia: Garantia }) {
           : `Limite de ${formatBRL(garantia.valor)} será ativado em ${formatDate(garantia.liberaEm)}. Rende ${garantia.rendimento} desde o depósito.`}
       </p>
       <div className="mt-4 flex gap-2">
-        <button type="button" onClick={() => navigate('/garantia')} className="btn-pill flex-1 py-2.5 text-[13px]">Guardar mais</button>
+        {garantia.valor < regras.maximo && (
+          <button type="button" onClick={() => navigate('/garantia')} className="btn-pill flex-1 py-2.5 text-[13px]">Guardar mais</button>
+        )}
         <button type="button" className="btn-outline flex-1 py-2.5 text-[13px]">Resgatar</button>
       </div>
     </section>

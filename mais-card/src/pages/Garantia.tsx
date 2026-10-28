@@ -6,6 +6,7 @@ import { CardVirtual } from '../components/CardVirtual'
 import { CheckIcon, PixDiamondIcon } from '../components/Icons'
 import { calcularCiclo, diasVencimento, formatBRL, garantia } from '../data/mock'
 import { api } from '../services/api'
+import { useAsync } from '../hooks/useAsync'
 import { useOnboarding } from '../hooks/useOnboarding'
 
 /** Depois da aprovação: escolher quanto guardar e o dia de vencimento. */
@@ -15,8 +16,11 @@ export function Garantia() {
   const [custom, setCustom] = useState('')
   const [enviando, setEnviando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
+  const atual = useAsync(() => api.getGarantia())
+  const jaGuardado = atual.data?.valor ?? 0
+  const maximo = Math.max(0, garantia.maximo - jaGuardado)
   const valor = data.valorGarantia
-  const valido = valor >= garantia.minimo && valor <= garantia.maximo
+  const valido = valor >= garantia.minimo && valor <= maximo
   const setValor = (v: number) => update({ valorGarantia: v })
 
   const guardar = async () => {
@@ -43,10 +47,14 @@ export function Garantia() {
           <CardVirtual size="sm" variant="amarelo" />
           <div className="min-w-0">
             <p className="text-[12.5px] text-subtle">Seu limite será</p>
-            <p className="text-[26px] font-extrabold leading-tight">{formatBRL(valido ? valor : 0)}</p>
-            <p className="text-[12px] text-subtle">igual ao valor guardado, ativo em {garantia.carenciaDias} dias</p>
+            <p className="text-[26px] font-extrabold leading-tight">{formatBRL(valido ? jaGuardado + valor : jaGuardado)}</p>
+            <p className="text-[12px] text-subtle">igual ao valor guardado, ativo em {garantia.carenciaDias} dias · máximo {formatBRL(garantia.maximo)}</p>
           </div>
         </section>
+
+        {maximo < garantia.minimo && (
+          <p className="card p-4 text-[13.5px] font-bold text-center">Você já está no limite máximo de {formatBRL(garantia.maximo)}.</p>
+        )}
 
         <section>
           <p className="text-[12.5px] font-bold text-subtle mb-2">Valores sugeridos</p>
@@ -54,7 +62,7 @@ export function Garantia() {
             {garantia.valoresSugeridos.map((v) => {
               const sel = valor === v && !custom
               return (
-                <button key={v} type="button" onClick={() => { setCustom(''); setValor(v) }} className={`card py-3 text-[15px] font-extrabold border-2 transition ${sel ? 'border-brand' : 'border-transparent'}`}>
+                <button key={v} type="button" disabled={v > maximo} onClick={() => { setCustom(''); setValor(v) }} className={`card py-3 text-[15px] font-extrabold border-2 transition disabled:opacity-35 ${sel ? 'border-brand' : 'border-transparent'}`}>
                   {formatBRL(v)}
                 </button>
               )
@@ -73,12 +81,12 @@ export function Garantia() {
                   setCustom(digits)
                   if (digits) setValor(Number(digits))
                 }}
-                placeholder={`de ${garantia.minimo} a ${garantia.maximo.toLocaleString('pt-BR')}`}
+                placeholder={`de ${garantia.minimo} a ${maximo}`}
                 className="w-full bg-transparent py-3 pl-2 text-[18px] font-extrabold outline-none"
               />
             </div>
           </label>
-          {!valido && <p role="alert" className="mt-2 text-[12.5px] font-bold text-danger">O valor precisa ficar entre {formatBRL(garantia.minimo)} e {formatBRL(garantia.maximo)}.</p>}
+          {!valido && maximo >= garantia.minimo && <p role="alert" className="mt-2 text-[12.5px] font-bold text-danger">O valor precisa ficar entre {formatBRL(garantia.minimo)} e {formatBRL(maximo)}.</p>}
         </section>
 
         <section>

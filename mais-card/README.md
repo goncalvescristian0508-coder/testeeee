@@ -48,7 +48,7 @@ push ou SMS além da consulta.
 
 ## Modelo do cartão garantido
 
-O limite é exatamente o valor guardado na Caixinha Garantia e é ativado depois que o valor
+O limite é exatamente o valor guardado na Caixinha Garantia (de R$ 25 a R$ 500) e é ativado depois que o valor
 completa 7 dias lá (carência). O dinheiro continua do cliente, rende desde o primeiro dia e
 pode ser resgatado a qualquer momento, inclusive antes dos 7 dias; nesse caso o limite não é
 ativado ou diminui junto. Não há taxa de adesão nem limite acima do valor guardado. As telas

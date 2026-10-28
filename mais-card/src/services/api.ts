@@ -172,9 +172,11 @@ export const mockApi: Api = {
   },
   async ativarGarantia(valor, diaVencimento) {
     await delay(700)
+    const total = (estado.garantia?.valor ?? 0) + valor
+    if (total > mock.garantia.maximo) throw new Error(`O limite máximo é ${mock.formatBRL(mock.garantia.maximo)}.`)
     const hoje = new Date()
     const garantia: Garantia = {
-      valor: (estado.garantia?.valor ?? 0) + valor,
+      valor: total,
       depositadoEm: hoje.toISOString(),
       liberaEm: addDays(hoje, mock.garantia.carenciaDias).toISOString(),
       carenciaDias: mock.garantia.carenciaDias,
